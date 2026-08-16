@@ -117,3 +117,16 @@ class CircuitBreakerOpenException(AppException):
             code="CIRCUIT_BREAKER_OPEN",
             details={"service": service_name},
         )
+
+
+class StorageException(AppException):
+    """Raised when an object storage operation fails (ADR-003)."""
+
+    def __init__(self, message: str, key: str | None = None, details: dict[str, Any] | None = None) -> None:
+        err_details = details or {}
+        if key:
+            err_details["storage_key"] = key
+        super().__init__(
+            message=message, status_code=500, code="STORAGE_ERROR", details=err_details
+        )
+
