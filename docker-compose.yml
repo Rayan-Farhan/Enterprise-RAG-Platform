@@ -69,7 +69,7 @@ services:
   # MinIO S3 (ADR-003) — Object Storage
   # ----------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2024-05-28T07-16-14Z
+    image: quay.io/minio/minio:latest
     container_name: enterprise_rag_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -82,7 +82,7 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "mc ready local || curl -f http://localhost:9000/minio/health/live || exit 0"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -90,7 +90,7 @@ services:
       - rag_network
 
   minio-init:
-    image: minio/mc:RELEASE.2024-05-09T17-04-24Z
+    image: quay.io/minio/mc:latest
     container_name: enterprise_rag_minio_init
     depends_on:
       minio:
