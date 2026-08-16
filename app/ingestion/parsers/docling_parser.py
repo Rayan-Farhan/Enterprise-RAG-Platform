@@ -92,12 +92,18 @@ class DoclingParser:
                 text = block[4].strip()
                 processed_table = False
 
-                if (text.startswith("Table ") or "Table" in text) and ":" in text and idx + 1 < len(text_blocks):
+                if (
+                    (text.startswith("Table ") or "Table" in text)
+                    and ":" in text
+                    and idx + 1 < len(text_blocks)
+                ):
                     t_title = text
                     next_idx = idx + 1
                     hdr_block = text_blocks[next_idx]
                     hdr_lines = [
-                        line_text.strip() for line_text in hdr_block[4].splitlines() if line_text.strip()
+                        line_text.strip()
+                        for line_text in hdr_block[4].splitlines()
+                        if line_text.strip()
                     ]
                     if len(hdr_lines) >= 3:
                         layout_headers = hdr_lines
@@ -113,11 +119,22 @@ class DoclingParser:
                         while row_idx < len(text_blocks):
                             row_block = text_blocks[row_idx]
                             row_lines = [
-                                line_text.strip() for line_text in row_block[4].splitlines() if line_text.strip()
+                                line_text.strip()
+                                for line_text in row_block[4].splitlines()
+                                if line_text.strip()
                             ]
                             if len(row_lines) >= 2 or any(
                                 term in row_block[4]
-                                for term in ["Grade", "PPO", "Match", "$", "hrs/wk", "Days", "Copay", "Deductible"]
+                                for term in [
+                                    "Grade",
+                                    "PPO",
+                                    "Match",
+                                    "$",
+                                    "hrs/wk",
+                                    "Days",
+                                    "Copay",
+                                    "Deductible",
+                                ]
                             ):
                                 if len(row_lines) < len(layout_headers):
                                     row_lines.extend([""] * (len(layout_headers) - len(row_lines)))
@@ -165,7 +182,6 @@ class DoclingParser:
                 if not processed_table:
                     idx += 1
 
-
             # 2. Text & Heading Extraction with font-level layout analysis
             text_page = page.get_text("dict", flags=pymupdf.TEXT_DEHYPHENATE)
             raw_text = page.get_text("text")
@@ -212,7 +228,10 @@ class DoclingParser:
                         el_type = ElementType.FOOTER
                     elif (
                         max_font_size >= 13.0
-                        or (max_font_size >= 11.0 and any(full_text.startswith(f"{i}.") for i in range(1, 10)))
+                        or (
+                            max_font_size >= 11.0
+                            and any(full_text.startswith(f"{i}.") for i in range(1, 10))
+                        )
                         or (max_font_size >= 11.5 and is_bold)
                         or (len(full_text) < 80 and full_text.isupper())
                     ):
