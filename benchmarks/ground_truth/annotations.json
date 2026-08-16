@@ -1,0 +1,103 @@
+{
+  "version": "2.0",
+  "description": "Ground-truth extraction annotations for representative pages of the real enterprise HR and benefits corpus",
+  "documents": [
+    {
+      "filename": "health_plan_at_a_glance_2026.pdf",
+      "total_pages": 11,
+      "annotations": [
+        {
+          "page_number": 2,
+          "headings": [
+            { "text": "University Of North Alabama", "level": 1 },
+            { "text": "BlueCard® PPO", "level": 2 },
+            { "text": "SUMMARY OF COST SHARING PROVISIONS", "level": 3 }
+          ],
+          "paragraphs": [
+            "Benefit payments are based on the amount of the provider's charge that Blue Cross and/or Blue Shield plans recognize for payment of benefits.",
+            "The allowed amount may vary depending upon the type provider and where services are received.",
+            "Calendar year deductibles and out-of-pocket maximums will be calculated in accordance with applicable Federal law.",
+            "Calendar Year Deductible: $550 individual; $1,700 family"
+          ],
+          "tables": [
+            {
+              "table_id": "health_cost_sharing_table",
+              "title": "Summary of Cost Sharing Provisions",
+              "num_rows": 2,
+              "num_cols": 3,
+              "headers": ["BENEFIT", "IN-NETWORK", "OUT-OF-NETWORK"],
+              "cells": [
+                [
+                  "Benefit payments are based on the amount of the provider's charge that Blue Cross and/or Blue Shield plans recognize for payment of benefits. The allowed amount may vary depending upon the type provider and where services are received.",
+                  "",
+                  ""
+                ],
+                [
+                  "SUMMARY OF COST SHARING PROVISIONS",
+                  "",
+                  ""
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "filename": "dental_plan_at_a_glance_2026.pdf",
+      "total_pages": 4,
+      "annotations": [
+        {
+          "page_number": 2,
+          "headings": [
+            { "text": "PREFERRED DENTAL NETWORK", "level": 1 }
+          ],
+          "paragraphs": [
+            "Blue Cross and Blue Shield of Alabama's Dental Network is a statewide dental network.",
+            "This managed care program is designed to promote quality and cost effective dental care.",
+            "Currently more than 2,800 dentists, approximately 93% of the dentists in Alabama, have joined this program."
+          ]
+        }
+      ]
+    },
+    {
+      "filename": "staff_handbook.pdf",
+      "total_pages": 56,
+      "annotations": [
+        {
+          "page_number": 3,
+          "headings": [
+            { "text": "MESSAGE FROM THE PRESIDENT", "level": 1 }
+          ],
+          "paragraphs": [
+            "It is my pleasure to offer this introduction to the Staff Handbook for the University of North Alabama. This is an important document.",
+            "As a member of the UNA family, is important that you have easy access to up-to-date information regarding policies, responsibilities, and benefits that relate to your employment.",
+            "We all take pride in the strong system of shared governance that exists at UNA. But shared governance can never be taken for granted."
+          ]
+        }
+      ]
+    },
+    {
+      "filename": "organizational_structure.pdf",
+      "total_pages": 1,
+      "annotations": [
+        {
+          "page_number": 1,
+          "headings": [
+            { "text": "University of North Alabama", "level": 1 },
+            { "text": "Organizational Structure", "level": 2 }
+          ],
+          "paragraphs": [
+            "Board of Trustees",
+            "President",
+            "Division of University Advancement",
+            "Division of Athletics",
+            "Division of Student Affairs",
+            "Division of Business & Financial Affairs",
+            "Division of Academic Affairs"
+          ]
+        }
+      ]
+    }
+  ]
+}
