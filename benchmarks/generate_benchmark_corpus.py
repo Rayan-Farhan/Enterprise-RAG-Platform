@@ -523,7 +523,10 @@ def generate_xlsx_bonus_matrix(output_path: Path) -> None:
     """Generate a multi-sheet Excel spreadsheet with compensation and bonus formulas."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Bonus Structure 2026"
+    if ws is None:
+        ws = wb.create_sheet("Bonus Structure 2026")
+    else:
+        ws.title = "Bonus Structure 2026"
 
     # Headers
     headers = ["Grade", "Role Title", "Target Bonus %", "Max Multiplier", "Min Multiplier"]
@@ -557,20 +560,21 @@ def generate_pptx_slides(output_path: Path) -> None:
 
     # Slide 1: Title
     slide1 = prs.slides.add_slide(prs.slide_layouts[0])
-    slide1.shapes.title.text = "Enterprise Diversity, Equity & Inclusion"
-    slide1.placeholders[1].text = "2026 Global Strategic Roadmap & Action Plan"
+    if slide1.shapes.title is not None:
+        slide1.shapes.title.text = "Enterprise Diversity, Equity & Inclusion"
+    if len(slide1.placeholders) > 1:
+        slide1.placeholders[1].text = "2026 Global Strategic Roadmap & Action Plan"
 
     # Slide 2: Pillars
     slide2 = prs.slides.add_slide(prs.slide_layouts[1])
-    slide2.shapes.title.text = "Strategic DEI Pillars"
-    tf = slide2.placeholders[1].text_frame
-    tf.text = "1. Inclusive Leadership Mentorship Programs"
-
-    p2 = tf.add_paragraph()
-    p2.text = "2. Equitable Pay Equity Audits Conducted Annually"
-
-    p3 = tf.add_paragraph()
-    p3.text = "3. Employee Resource Groups (ERGs) with Executive Sponsorship"
+    if slide2.shapes.title is not None:
+        slide2.shapes.title.text = "Strategic DEI Pillars"
+    if len(slide2.placeholders) > 1:
+        slide2.placeholders[1].text = (
+            "1. Inclusive Talent Acquisition\n"
+            "2. Equitable Career Progression\n"
+            "3. Global ERG & Community Support"
+        )
 
     prs.save(str(output_path))
 
