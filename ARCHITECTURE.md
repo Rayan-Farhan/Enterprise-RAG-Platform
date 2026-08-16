@@ -9,10 +9,10 @@
 ```mermaid
 flowchart TD
     %% Client & API Layer
-    subgraph API_Layer ["Application & API Layer (FastAPI) [ADR-001, ADR-030]"]
-        Client[Client / REST Consumer] -->|HTTP Multipart / JSON| API_Router["FastAPI Master Router (/api/v1)"]
+    subgraph API_Layer ["Application & API Layer (FastAPI) (ADR-001, ADR-030)"]
+        Client["Client / REST Consumer"] -->|"HTTP Multipart / JSON"| API_Router["FastAPI Master Router (/api/v1)"]
         API_Router --> HealthAPI["Health Probes (/health/live, /health/ready)"]
-        API_Router --> DocsAPI["Documents API (/documents) [ADR-035]"]
+        API_Router --> DocsAPI["Documents API (/documents) (ADR-035)"]
         
         DocsAPI -->|"POST /documents"| IngestEndpoint["Ingestion Controller"]
         DocsAPI -->|"GET /documents"| ListEndpoint["Metadata Query Controller"]
@@ -21,46 +21,46 @@ flowchart TD
     end
 
     %% Ingestion Plane
-    subgraph Ingestion_Plane ["Ingestion & Document Intelligence Plane [ADR-004, ADR-005]"]
-        IngestEndpoint --> IngestService["IngestionService (Orchestrator) [Task 2.6]"]
+    subgraph Ingestion_Plane ["Ingestion & Document Intelligence Plane (ADR-004, ADR-005)"]
+        IngestEndpoint --> IngestService["IngestionService (Orchestrator) (Task 2.6)"]
         
         %% Step 1: Dedup Check
-        IngestService -->|1. Compute SHA-256| DedupEngine["Deduplication Engine [Master §10]"]
-        DedupEngine -->|Exact Hash Lookup| DocRepo["DocumentRepository"]
+        IngestService -->|"1. Compute SHA-256"| DedupEngine["Deduplication Engine (Master §10)"]
+        DedupEngine -->|"Exact Hash Lookup"| DocRepo["DocumentRepository"]
         
         %% Step 2: Object Storage
-        IngestService -->|2. Store Raw Binary| StorageService["MinIOStorageService [ADR-003]"]
+        IngestService -->|"2. Store Raw Binary"| StorageService["MinIOStorageService (ADR-003)"]
         
         %% Step 3: Parsing Router
-        IngestService -->|3. Route File| Router["FormatRouter [Task 1.5]"]
+        IngestService -->|"3. Route File"| Router["FormatRouter (Task 1.5)"]
         
-        subgraph Parsers ["Pluggable Document Parsers [ADR-004]"]
-            Router -->|PDF Primary| Docling["DoclingParser (IBM Docling)"]
-            Router -->|PDF Fallback 1| OpenDataLoader["OpenDataLoaderParser"]
-            Router -->|PDF Fallback 2| PyMuPDF["PyMuPDFParser (fitz)"]
-            Router -->|DOCX/XLSX/PPTX/TXT| Office["OfficeParser (python-docx/openpyxl/pptx)"]
+        subgraph Parsers ["Pluggable Document Parsers (ADR-004)"]
+            Router -->|"PDF Primary"| Docling["DoclingParser (IBM Docling)"]
+            Router -->|"PDF Fallback 1"| OpenDataLoader["OpenDataLoaderParser"]
+            Router -->|"PDF Fallback 2"| PyMuPDF["PyMuPDFParser (fitz)"]
+            Router -->|"DOCX / XLSX / PPTX / TXT"| Office["OfficeParser (python-docx / openpyxl / pptx)"]
         end
         
-        Docling & OpenDataLoader & PyMuPDF & Office -->|Intermediate Output| ParsedDoc["ParsedDocument (Pydantic Schema)"]
+        Docling & OpenDataLoader & PyMuPDF & Office -->|"Intermediate Output"| ParsedDoc["ParsedDocument (Pydantic Schema)"]
         
         %% Step 4: Asset Storage
-        ParsedDoc -->|4. Store Extracted Figures/Tables| StorageService
+        ParsedDoc -->|"4. Store Extracted Figures/Tables"| StorageService
         
         %% Step 5: Canonical Adaptation
-        ParsedDoc -->|5. Adapt to Canonical| Adapter["CanonicalAdapter [ADR-005]"]
+        ParsedDoc -->|"5. Adapt to Canonical"| Adapter["CanonicalAdapter (ADR-005)"]
         
         %% Step 6: Boilerplate Flagging
-        Adapter -->|6. Flag Boilerplate| BoilerplateDetector["BoilerplateDetector [Master §10]"]
+        Adapter -->|"6. Flag Boilerplate"| BoilerplateDetector["BoilerplateDetector (Master §10)"]
         
         %% Step 7: Persistence
-        BoilerplateDetector -->|7. Persist Canonical Entities| DocRepo
+        BoilerplateDetector -->|"7. Persist Canonical Entities"| DocRepo
     end
 
     %% Storage & Database Layer
-    subgraph Storage_Layer ["Durable Persistence & Object Storage Plane [ADR-002, ADR-003]"]
-        DocRepo -->|SQLAlchemy 2.0 Async Session| Postgres[("PostgreSQL 16 (System of Record) [ADR-002]")]
+    subgraph Storage_Layer ["Durable Persistence & Object Storage Plane (ADR-002, ADR-003)"]
+        DocRepo -->|"SQLAlchemy 2.0 Async Session"| Postgres[("PostgreSQL 16 (System of Record) (ADR-002)")]
         
-        subgraph Relational_Hierarchy ["Canonical Relational Hierarchy [ADR-005, ADR-037]"]
+        subgraph Relational_Hierarchy ["Canonical Relational Hierarchy (ADR-005, ADR-037)"]
             Postgres --- DocTable["documents (file_hash, storage_key, priority)"]
             DocTable --> VerTable["document_versions (version, status, authority, validity)"]
             VerTable --> MetaTable["document_metadata (department, policy_type, country, audience, JSONB)"]
@@ -69,7 +69,7 @@ flowchart TD
             PageTable --> ElemTable["elements (element_type, bounding_box, table_data, is_boilerplate)"]
         end
 
-        StorageService -->|S3 Protocol| MinIO[("MinIO S3 Object Storage [ADR-003]")]
+        StorageService -->|"S3 Protocol"| MinIO[("MinIO S3 Object Storage (ADR-003)")]
         
         subgraph Bucket_Layout ["MinIO Bucket: enterprise-rag-documents"]
             MinIO --- PrefixOriginal["original/ (Raw uploaded documents)"]
@@ -81,24 +81,24 @@ flowchart TD
     end
 
     %% Model Gateway
-    subgraph Model_Gateway_Plane ["Unified Model Gateway (Zero-Cost Dev Profile) [ADR-046, ADR-051]"]
+    subgraph Model_Gateway_Plane ["Unified Model Gateway (Zero-Cost Dev Profile) (ADR-046, ADR-051)"]
         Gateway["ModelGateway (Uniform Facade)"]
         
-        Gateway -->|Generate / Chat| GeminiLLM["Gemini 2.0 Flash (Free API)"]
-        Gateway -->|High-Throughput LLM| GroqLLM["Groq Llama 3.3 70B Versatile (Free API)"]
-        Gateway -->|Multilingual Embeddings| JinaEmbed["Jina Embeddings v3 (Free API)"]
-        Gateway -->|Reranking| JinaRerank["Jina Reranker v2 Base (Free API)"]
-        Gateway -->|Vision / OCR Grounding| GeminiVision["Gemini 2.0 Flash Vision (Free API)"]
+        Gateway -->|"Generate / Chat"| GeminiLLM["Gemini 2.0 Flash (Free API)"]
+        Gateway -->|"High-Throughput LLM"| GroqLLM["Groq Llama 3.3 70B Versatile (Free API)"]
+        Gateway -->|"Multilingual Embeddings"| JinaEmbed["Jina Embeddings v3 (Free API)"]
+        Gateway -->|"Reranking"| JinaRerank["Jina Reranker v2 Base (Free API)"]
+        Gateway -->|"Vision / OCR Grounding"| GeminiVision["Gemini 2.0 Flash Vision (Free API)"]
         
-        Gateway -.->|Local Stubs / Production Profile [ADR-015, ADR-016]| LocalInference["vLLM (Qwen2.5) / TEI Embeddings"]
+        Gateway -.->|"Local Stubs / Production Profile (ADR-015, ADR-016)"| LocalInference["vLLM (Qwen2.5) / TEI Embeddings"]
     end
 
     %% Stateful Infrastructure (Docker Compose)
-    subgraph Infra_Plane ["Stateful Infrastructure (Docker Compose) [ADR-031, ADR-052]"]
-        RedisNode[("Redis 7 (Cache, Distributed Locks, Rate Limiting) [ADR-020]")]
-        RabbitNode[("RabbitMQ 3.13 (Message Broker for Celery Ingestion Plane) [ADR-017]")]
-        QdrantNode[("Qdrant v1.9.4 (Dense & Multimodal Vector Engine) [ADR-007, ADR-009]")]
-        OpenSearchNode[("OpenSearch 2.14 (BM25 Lexical & Neural Sparse Search) [ADR-007, ADR-008]")]
+    subgraph Infra_Plane ["Stateful Infrastructure (Docker Compose) (ADR-031, ADR-052)"]
+        RedisNode[("Redis 7 (Cache, Distributed Locks, Rate Limiting) (ADR-020)")]
+        RabbitNode[("RabbitMQ 3.13 (Message Broker for Celery Ingestion Plane) (ADR-017)")]
+        QdrantNode[("Qdrant v1.9.4 (Dense & Multimodal Vector Engine) (ADR-007, ADR-009)")]
+        OpenSearchNode[("OpenSearch 2.14 (BM25 Lexical & Neural Sparse Search) (ADR-007, ADR-008)")]
     end
 ```
 
