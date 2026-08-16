@@ -19,7 +19,9 @@ make typecheck
 ```
 
 ## Documentation & Architecture
+- [System Architecture (Current State)](ARCHITECTURE.md)
 - [Implementation Roadmap](docs/IMPLEMENTATION_ROADMAP.md)
 - [Engineering Blueprint](docs/ENTERPRISE_RAG_FINAL_ENGINEERING_BLUEPRINT_V1.md)
 - [Technology Baseline & 52 ADRs](docs/architecture/README.md)
 - [Master Plan](docs/production_grade_multimodal_rag_master_plan.md)
+
