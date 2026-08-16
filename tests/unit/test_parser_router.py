@@ -2,10 +2,17 @@
 
 from pathlib import Path
 from unittest.mock import MagicMock
+
 import docx
 import pytest
 
-from app.ingestion.parsers.base import DocumentParser, ElementType, ParsedDocument, ParsedElement, ParsedPage
+from app.ingestion.parsers.base import (
+    DocumentParser,
+    ElementType,
+    ParsedDocument,
+    ParsedElement,
+    ParsedPage,
+)
 from app.ingestion.parsers.router import FormatRouter
 
 CORPUS_DIR = Path("benchmarks/corpus")

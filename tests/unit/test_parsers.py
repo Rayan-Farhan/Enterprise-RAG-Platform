@@ -1,12 +1,13 @@
 """Unit tests for document parsers (Task 1.3, Task 1.4)."""
 
 from pathlib import Path
+
 import docx
 import openpyxl
 import pptx
 import pytest
 
-from app.ingestion.parsers.base import ElementType, ParsedDocument
+from app.ingestion.parsers.base import ParsedDocument
 from app.ingestion.parsers.docling_parser import DoclingParser
 from app.ingestion.parsers.office_parser import OfficeParser
 from app.ingestion.parsers.opendataloader_parser import OpenDataLoaderParser
