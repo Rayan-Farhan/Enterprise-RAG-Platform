@@ -94,10 +94,20 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = [
+    "structlog.*",
+    "tenacity.*",
+    "google.generativeai.*",
+    "google.genai.*",
+    "groq.*",
     "minio.*",
     "opensearchpy.*",
-    "google.generativeai.*",
-    "groq.*",
+    "qdrant_client.*",
+    "pypdf.*",
+    "pymupdf.*",
+    "fitz.*",
+    "docx.*",
+    "openpyxl.*",
+    "pptx.*",
 ]
 ignore_missing_imports = true
 
