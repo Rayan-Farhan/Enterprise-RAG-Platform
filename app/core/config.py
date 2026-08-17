@@ -26,7 +26,10 @@ class AppSettings(BaseSettings):
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production"
 
     # Inference Profile (ADR-051)
-    INFERENCE_PROFILE: Literal["hosted", "local"] = "hosted"
+    # hosted = free hosted APIs (dev default) | local = vLLM + TEI (production)
+    # stub   = explicitly fake gateway for keyless development; never a fallback,
+    #          and results under it are not valid evaluation data.
+    INFERENCE_PROFILE: Literal["hosted", "local", "stub"] = "hosted"
 
     # PostgreSQL Database (ADR-002)
     POSTGRES_HOST: str = "localhost"
@@ -91,12 +94,18 @@ class AppSettings(BaseSettings):
     OPENSEARCH_INDEX_NAME: str = "enterprise_rag_chunks"
 
     # Hosted Providers (ADR-051 - Free Tier Development)
+    # Model IDs are pinned explicitly rather than to a floating alias so that
+    # `model_version` recorded on every answer identifies a specific model. Hosted
+    # providers retire models: `gemini-2.0-flash` and `llama-3.3-70b-versatile` were
+    # both already decommissioned and returned 404. Re-check with
+    # `GET /v1beta/models` (Gemini) and `GET /openai/v1/models` (Groq) when calls
+    # start failing with NOT_FOUND.
     GEMINI_API_KEY: str = Field(default="")
-    GEMINI_MODEL: str = "gemini-2.0-flash"
-    GEMINI_VISION_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_VISION_MODEL: str = "gemini-3.6-flash"
 
     GROQ_API_KEY: str = Field(default="")
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
 
     JINA_API_KEY: str = Field(default="")
     JINA_EMBED_MODEL: str = "jina-embeddings-v3"
@@ -107,6 +116,44 @@ class AppSettings(BaseSettings):
     VLLM_MODEL: str = "Qwen/Qwen2.5-7B-Instruct"
     TEI_EMBED_BASE_URL: str = "http://localhost:8080"
     TEI_RERANK_BASE_URL: str = "http://localhost:8081"
+
+    # Chunking (Stage 3 baseline, ADR-006, ADR-036)
+    CHUNKING_STRATEGY: Literal["fixed"] = "fixed"
+    CHUNKING_VERSION: str = Field(
+        default="fixed-v2",
+        description="Participates in deterministic chunk IDs; bump to force re-chunking (ADR-036)",
+    )
+    CHUNK_SIZE_TOKENS: int = 512
+    CHUNK_OVERLAP_TOKENS: int = 64
+
+    # Embedding & Indexing (Stage 3, ADR-009, ADR-036)
+    EMBEDDING_VERSION: str = Field(
+        default="jina-embeddings-v3",
+        description="Participates in deterministic point IDs; bump to force re-embedding",
+    )
+    EMBEDDING_DIMENSIONS: int = 1024
+    EMBEDDING_BATCH_SIZE: int = 32
+    EMBEDDING_MAX_RPM: int = 60
+    EMBEDDING_MAX_RETRIES: int = 5
+
+    # Dense Retrieval (Stage 3, ADR-007)
+    RETRIEVAL_TOP_K: int = 8
+    RETRIEVAL_CANDIDATE_LIMIT: int = 50
+    # PROVISIONAL — set by Stage 4 experiment, not by preference.
+    # Hand-probed on the HR handbook with jina-embeddings-v3: in-corpus questions
+    # scored 0.48-0.59, out-of-corpus questions 0.24-0.29. 0.35 sits in that gap.
+    # Five queries is not an experiment; Stage 4 must re-derive this from the
+    # golden dataset by measuring abstention accuracy against recall.
+    RETRIEVAL_MIN_SCORE: float = 0.35
+
+    # Generation & Grounding (Stage 3, ADR-024, ADR-025, ADR-047)
+    GENERATION_MAX_CONTEXT_TOKENS: int = 6000
+    GENERATION_TEMPERATURE: float = 0.1
+    GENERATION_MAX_TOKENS: int = 1500
+    PROMPT_VERSION_ANSWER: str = "answer_v1"
+    PROMPT_VERSION_ABSTENTION: str = "abstention_v1"
+    PROMPT_VERSION_CITATION: str = "citation_v1"
+    ABSTENTION_MIN_EVIDENCE_CHUNKS: int = 1
 
     # Feature Flags (Master Plan §2)
     ENABLE_RERANKING: bool = False
@@ -119,11 +166,26 @@ class AppSettings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     MAX_UPLOAD_SIZE_MB: int = 100
 
+    @property
+    def effective_embedding_version(self) -> str:
+        """The embedding version actually written to chunks and vector points.
+
+        Under the `stub` profile the vectors are not the configured model's output,
+        so they are namespaced. Sharing the real model's version would let a later
+        switch to a real provider mistake stub vectors for current ones, and would
+        make Stage 4 experiment records claim a model that never ran.
+        """
+        if self.INFERENCE_PROFILE == "stub":
+            return f"stub:{self.EMBEDDING_VERSION}"
+        return self.EMBEDDING_VERSION
+
     @field_validator("INFERENCE_PROFILE")
     @classmethod
     def validate_inference_profile(cls, v: str) -> str:
-        if v not in ("hosted", "local"):
-            raise ValueError(f"Invalid INFERENCE_PROFILE: {v}. Must be 'hosted' or 'local'")
+        if v not in ("hosted", "local", "stub"):
+            raise ValueError(
+                f"Invalid INFERENCE_PROFILE: {v}. Must be 'hosted', 'local', or 'stub'"
+            )
         return v
 
 
