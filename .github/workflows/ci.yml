@@ -55,6 +55,72 @@ jobs:
         run: |
           pytest --cov=app --cov-report=term-missing tests/unit
 
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The Stage 3 pipeline tests run against SQLite plus in-memory doubles for
+      # Qdrant and the embedding provider, so they need no live services. Tests
+      # requiring real Compose services are added alongside them in Stage 7.
+      - name: Run Integration Tests
+        run: |
+          pytest tests/integration
+
+  migration-check:
+    name: Migrations Build a Fresh Schema
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: enterprise_rag
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Stage 2 exit gate: a fresh database reaches current schema from
+      # migrations alone, and downgrade works one step.
+      - name: Upgrade to head
+        run: alembic upgrade head
+
+      - name: Downgrade one step and re-upgrade
+        run: |
+          alembic downgrade -1
+          alembic upgrade head
+
   docker-compose-validate:
     name: Validate Docker Compose Configuration
     runs-on: ubuntu-latest

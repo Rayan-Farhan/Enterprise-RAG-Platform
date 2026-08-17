@@ -1,0 +1,40 @@
+# Pre-commit hooks (Task 0.2). Install once with: pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=5000"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # Secrets come from the environment (ADR-033); a committed .env is a bug.
+  - repo: local
+    hooks:
+      - id: block-dotenv
+        name: block committed .env files
+        entry: python scripts/check_no_dotenv.py
+        language: system
+        pass_filenames: true
+        files: (^|/)\.env$
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        files: ^app/
+        additional_dependencies:
+          - pydantic>=2.7.0
+          - pydantic-settings>=2.3.0
+          - sqlalchemy>=2.0.30

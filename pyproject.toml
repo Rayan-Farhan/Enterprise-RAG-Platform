@@ -40,7 +40,8 @@ dev = [
     "pytest-mock>=3.14.0",
     "ruff>=0.4.9",
     "mypy>=1.10.0",
-    "types-redis>=4.6.0.20240425",
+    # No types-redis: redis>=5 ships its own py.typed, and the stub package is
+    # stale enough to shadow it and report false errors (e.g. missing `aclose`).
     "aiosqlite>=0.20.0",
 ]
 
@@ -94,6 +95,8 @@ no_implicit_optional = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
+# Third-party packages without bundled type information. Entries are only kept
+# here while they are actually needed — a stale ignore hides real type errors.
 module = [
     "structlog.*",
     "tenacity.*",
@@ -102,8 +105,6 @@ module = [
     "groq.*",
     "minio.*",
     "opensearchpy.*",
-    "qdrant_client.*",
-    "pypdf.*",
     "pymupdf.*",
     "fitz.*",
     "docx.*",
@@ -118,5 +119,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+# `live` tests hit real provider APIs and are excluded by default; run them with
+# `pytest -m live` (or `make smoke`) when provider keys are configured.
+addopts = "-v --tb=short -m 'not live'"
+markers = [
+    "live: requires a real provider API key and makes a network call",
+]
 
