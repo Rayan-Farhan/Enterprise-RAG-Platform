@@ -36,18 +36,23 @@ class PromptNotFoundError(KeyError):
     """Raised when a requested prompt version has no artifact on disk."""
 
 
-@lru_cache(maxsize=32)
-def get_prompt(version: str) -> PromptTemplate:
-    """Load a prompt artifact by version identifier, e.g. ``answer_v1``."""
+@lru_cache(maxsize=64)
+def load_prompt(directory: Path, version: str) -> PromptTemplate:
+    """Load a prompt artifact from any template directory.
+
+    Stage 4's judge prompts live in their own directory but need the identical
+    version-plus-content-hash guarantee: a judge whose prompt drifts without a
+    version bump makes every score before and after it incomparable.
+    """
     # Guard against traversal: prompt versions are flat identifiers, never paths.
     if not version or "/" in version or "\\" in version or version.startswith("."):
         raise PromptNotFoundError(f"Invalid prompt version identifier: '{version}'")
 
-    path = TEMPLATE_DIR / f"{version}.md"
+    path = directory / f"{version}.md"
     if not path.is_file():
-        available = ", ".join(sorted(p.stem for p in TEMPLATE_DIR.glob("*.md")))
+        available = ", ".join(sorted(p.stem for p in directory.glob("*.md")))
         raise PromptNotFoundError(
-            f"Prompt version '{version}' not found in {TEMPLATE_DIR}. Available: {available}"
+            f"Prompt version '{version}' not found in {directory}. Available: {available}"
         )
 
     text = path.read_text(encoding="utf-8").strip()
@@ -58,6 +63,11 @@ def get_prompt(version: str) -> PromptTemplate:
     )
 
 
-def list_prompt_versions() -> list[str]:
-    """Return every available prompt version identifier."""
-    return sorted(p.stem for p in TEMPLATE_DIR.glob("*.md"))
+def get_prompt(version: str) -> PromptTemplate:
+    """Load a generation prompt artifact by version identifier, e.g. ``answer_v1``."""
+    return load_prompt(TEMPLATE_DIR, version)
+
+
+def list_prompt_versions(directory: Path | None = None) -> list[str]:
+    """Return every available prompt version identifier in a template directory."""
+    return sorted(p.stem for p in (directory or TEMPLATE_DIR).glob("*.md"))

@@ -39,6 +39,13 @@ class AnswerResult:
     citations: list[Citation] = field(default_factory=list)
     abstained: bool = False
     retrieved_chunk_ids: list[uuid.UUID] = field(default_factory=list)
+    # The full ranked hits and the subset that survived assembly. Stage 4's
+    # retrieval metrics are computed at element granularity, and context recall
+    # is specifically the difference between these two lists — recording only the
+    # chunk IDs would make evidence dropped by the token budget look identical to
+    # evidence never retrieved.
+    retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
+    context_chunk_ids: list[uuid.UUID] = field(default_factory=list)
     fabricated_markers: list[str] = field(default_factory=list)
     rejected: bool = False
     rejection_reason: str | None = None
@@ -55,6 +62,7 @@ class AnswerResult:
     generation_latency_ms: float = 0.0
     total_latency_ms: float = 0.0
     evidence_tokens: int = 0
+    evidence_block: str = ""
     degradations: list[str] = field(default_factory=list)
 
 
@@ -126,6 +134,8 @@ class GenerationService:
             citations=validated.citations,
             abstained=validated.support is SupportState.INSUFFICIENT,
             retrieved_chunk_ids=[c.chunk_id for c in retrieval.chunks],
+            retrieved_chunks=list(retrieval.chunks),
+            context_chunk_ids=[c.chunk_id for c in context.included_chunks],
             fabricated_markers=validated.fabricated_markers,
             rejected=validated.rejected,
             rejection_reason=validated.rejection_reason,
@@ -139,6 +149,9 @@ class GenerationService:
             retrieval_latency_ms=retrieval.latency_ms,
             generation_latency_ms=gen_latency,
             evidence_tokens=context.evidence_tokens,
+            # Retained verbatim so Stage 4's judge scores the answer against the
+            # exact text the model saw, not a reconstruction of it.
+            evidence_block=context.evidence_block,
         )
         result.total_latency_ms = (time.perf_counter() - started) * 1000
 

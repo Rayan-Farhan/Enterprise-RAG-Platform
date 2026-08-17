@@ -1,5 +1,7 @@
 .PHONY: help up down restart ps logs lint format typecheck test test-unit test-integration \
-        test-e2e smoke migrate migration hooks verify clean
+        test-e2e smoke migrate migration hooks verify clean \
+        eval eval-diff eval-gate eval-validate eval-validate-schema eval-list \
+        eval-export-review eval-import-review
 
 help:
 	@echo "Enterprise Multimodal RAG Platform - Command Center"
@@ -20,6 +22,12 @@ help:
 	@echo "make migration        - Autogenerate a new migration (MSG=...)"
 	@echo "make hooks            - Install pre-commit hooks"
 	@echo "make verify           - lint + typecheck + test (the stage exit gate)"
+	@echo "make eval             - run an experiment (CONFIG=name SPLIT=dev)"
+	@echo "make eval-diff        - compare two experiments (RUN_A=... RUN_B=...)"
+	@echo "make eval-gate        - fail on regression beyond tolerance (RUN_A=... RUN_B=...)"
+	@echo "make eval-validate    - validate a golden dataset split against the corpus (SPLIT=dev)"
+	@echo "make eval-validate-schema - schema-only dataset checks (no corpus, no database)"
+	@echo "make eval-list        - list committed experiments"
 	@echo "make clean            - Clean build and cache files"
 
 up:
@@ -75,6 +83,46 @@ migration:
 
 hooks:
 	pre-commit install
+
+# Evaluation harness (Stage 4). Every target shells out to app.evaluation.cli,
+# which exits non-zero on failure so `eval-gate` can fail a CI job.
+SPLIT ?= dev
+DATASET_VERSION ?= v1
+TOLERANCE ?=
+# The gate's defaults are what CI runs: the committed baseline against whichever
+# experiment the branch committed most recently.
+RUN_A ?= experiment-001-baseline
+RUN_B ?= latest
+
+eval:
+	python -m app.evaluation.cli run --name "$(CONFIG)" --split $(SPLIT) \
+		--dataset-version $(DATASET_VERSION) $(EVAL_ARGS)
+
+eval-diff:
+	python -m app.evaluation.cli diff --baseline "$(RUN_A)" --candidate "$(RUN_B)"
+
+eval-gate:
+	python -m app.evaluation.cli gate --baseline "$(RUN_A)" --candidate "$(RUN_B)" \
+		$(if $(TOLERANCE),--tolerance $(TOLERANCE),)
+
+eval-validate:
+	python -m app.evaluation.cli validate --split $(SPLIT) --dataset-version $(DATASET_VERSION)
+
+# Schema and type-coverage checks only, with no corpus and no database. This is
+# the form CI can always run; `eval-validate` additionally resolves every
+# evidence pointer against PostgreSQL.
+eval-validate-schema:
+	python -m app.evaluation.cli validate --split dev --no-corpus
+	python -m app.evaluation.cli validate --split validation --no-corpus
+
+eval-list:
+	python -m app.evaluation.cli list
+
+eval-export-review:
+	python -m app.evaluation.cli export-review --run "$(RUN)" --out "$(OUT)"
+
+eval-import-review:
+	python -m app.evaluation.cli import-review --file "$(FILE)" --run "$(RUN)"
 
 # The stage exit gate in one command.
 verify: lint typecheck test

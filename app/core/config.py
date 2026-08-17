@@ -155,6 +155,48 @@ class AppSettings(BaseSettings):
     PROMPT_VERSION_CITATION: str = "citation_v1"
     ABSTENTION_MIN_EVIDENCE_CHUNKS: int = 1
 
+    # Evaluation Subsystem (Stage 4, ADR-028, ADR-029)
+    EVAL_DATASET_VERSION: str = "v1"
+    EVAL_RESULTS_DIR: str = "evaluation/results"
+    EVAL_CONCURRENCY: int = Field(
+        default=2,
+        ge=1,
+        description="Questions evaluated in parallel; hosted free tiers rate-limit above ~2",
+    )
+
+    # LLM-as-judge. The judge deliberately runs on a different provider than the
+    # generator: under the hosted profile answers come from Gemini, so the judge
+    # runs on Groq. A model scoring its own output has a documented
+    # self-preference bias, and the golden dataset is partly LLM-drafted.
+    EVAL_JUDGE_ENABLED: bool = True
+    EVAL_JUDGE_PROVIDER: str = "groq"
+    EVAL_JUDGE_MODEL: str = ""
+    EVAL_JUDGE_TEMPERATURE: float = 0.0
+    EVAL_JUDGE_MAX_TOKENS: int = 800
+    EVAL_JUDGE_SAMPLES: int = Field(
+        default=1,
+        ge=1,
+        description="Repeat judgements per question; >1 measures the variance band",
+    )
+    EVAL_JUDGE_PARALLEL_PROMPTS: bool = Field(
+        default=False,
+        description=(
+            "Issue the three judge prompts concurrently. Off by default: on a hosted "
+            "free tier the token-per-minute window is the constraint, and concurrent "
+            "prompts get rate-limited and re-spend their tokens on retry"
+        ),
+    )
+    PROMPT_VERSION_JUDGE_ANSWER: str = "judge_answer_v1"
+    PROMPT_VERSION_JUDGE_CITATION: str = "judge_citation_v1"
+    PROMPT_VERSION_JUDGE_ABSTENTION: str = "judge_abstention_v1"
+
+    # Regression gate (Task 4.6). Tolerance is absolute, on metrics scaled 0-1.
+    EVAL_REGRESSION_TOLERANCE: float = Field(
+        default=0.05,
+        ge=0.0,
+        description="How far a gated metric may fall below the baseline before CI fails",
+    )
+
     # Feature Flags (Master Plan §2)
     ENABLE_RERANKING: bool = False
     ENABLE_VISUAL_RETRIEVAL: bool = False

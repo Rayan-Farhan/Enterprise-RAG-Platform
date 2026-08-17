@@ -31,8 +31,15 @@ class ModelGateway(Protocol):
         temperature: float = 0.2,
         max_tokens: int = 2048,
         prompt_version: str | None = None,
+        provider: str | None = None,
     ) -> GenerationResult:
-        """Generate text from a prompt."""
+        """Generate text from a prompt.
+
+        ``provider`` pins the call to a named provider instead of the profile's
+        default routing. Stage 4's LLM judge uses it to run on a different model
+        family than the one that produced the answer; a judge that shares a model
+        with the generator scores its own output.
+        """
         ...
 
     async def embed(
@@ -95,8 +102,37 @@ class HostedModelGateway:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         prompt_version: str | None = None,
+        provider: str | None = None,
     ) -> GenerationResult:
-        """Generate text via Gemini (primary) with Groq fallback."""
+        """Generate text via Gemini (primary) with Groq fallback.
+
+        An explicit ``provider`` disables the fallback. Silently answering a
+        request for the judge model with the generator model would produce an
+        evaluation run that looks valid and is not.
+        """
+        if provider is not None:
+            if provider == "gemini":
+                return await self.gemini.generate(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_name,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    prompt_version=prompt_version,
+                )
+            if provider == "groq":
+                return await self.groq.generate(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_name=model_name,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    prompt_version=prompt_version,
+                )
+            raise ValueError(
+                f"Unknown provider '{provider}' for the hosted profile. Available: gemini, groq."
+            )
+
         try:
             return await self.gemini.generate(
                 prompt=prompt,
@@ -184,7 +220,10 @@ class LocalModelGateway:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         prompt_version: str | None = None,
+        provider: str | None = None,
     ) -> GenerationResult:
+        # The local profile serves every text model from one vLLM instance, so
+        # provider pinning is expressed through `model_name` instead.
         return await self.vllm.generate(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -259,6 +298,7 @@ class StubModelGateway:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         prompt_version: str | None = None,
+        provider: str | None = None,
     ) -> GenerationResult:
         return await self.stub.generate(
             prompt=prompt,
