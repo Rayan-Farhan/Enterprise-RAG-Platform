@@ -24,13 +24,16 @@ from app.api.v1.schemas.documents import (
     DocumentMetadataResponse,
     DocumentVersionResponse,
     ElementResponse,
+    IndexVersionResponse,
 )
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundException, ValidationException
 from app.core.logging import get_logger
 from app.db.repositories.document_repo import DocumentRepository
 from app.db.session import get_db_session
+from app.ingestion.chunking.service import ChunkingService, get_chunking_service
 from app.ingestion.service import IngestionService, get_ingestion_service
+from app.retrieval.indexer import ChunkIndexer, get_chunk_indexer
 from app.storage.base import ObjectStorageProtocol
 from app.storage.minio_service import get_storage_service
 
@@ -264,6 +267,58 @@ async def get_version_elements(
         )
         for el in elements
     ]
+
+
+@router.post(
+    "/{document_id}/versions/{version_id}/index",
+    response_model=IndexVersionResponse,
+    summary="Chunk and index a document version for retrieval",
+)
+async def index_document_version(
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    force: bool = Query(
+        default=False,
+        description="Re-embed every chunk even if already indexed under the current version",
+    ),
+    session: AsyncSession = Depends(get_db_session),
+    chunking_service: ChunkingService = Depends(get_chunking_service),
+    indexer: ChunkIndexer = Depends(get_chunk_indexer),
+) -> IndexVersionResponse:
+    """Chunk a persisted version and index its chunks into the vector store.
+
+    Both steps are idempotent: chunk IDs are deterministic (ADR-036) and vector
+    points are upserted by a deterministic point ID, so re-running this endpoint
+    creates zero duplicate chunks and zero duplicate points. Stage 7 replaces this
+    synchronous endpoint with the Celery chain while reusing these same functions.
+    """
+    chunking = await chunking_service.chunk_version(session=session, version_id=version_id)
+    if chunking.document_id != document_id:
+        raise ValidationException(
+            f"Version '{version_id}' does not belong to document '{document_id}'"
+        )
+
+    indexing = await indexer.index_version(session=session, version_id=version_id, force=force)
+
+    return IndexVersionResponse(
+        document_id=document_id,
+        version_id=version_id,
+        strategy=chunking.strategy,
+        chunking_version=chunking.chunking_version,
+        chunks_created=chunking.chunks_created,
+        chunks_updated=chunking.chunks_updated,
+        chunks_removed=chunking.chunks_removed,
+        total_chunks=chunking.total_chunks,
+        total_tokens=chunking.total_tokens,
+        chunks_embedded=indexing.chunks_embedded,
+        chunks_already_indexed=indexing.chunks_skipped,
+        points_upserted=indexing.points_upserted,
+        embedding_version=indexing.embedding_version,
+        embedding_provider=indexing.provider,
+        embedding_dimensions=indexing.dimensions,
+        rate_limit_waits=indexing.rate_limit_waits,
+        was_noop=chunking.is_noop and indexing.is_noop,
+    )
 
 
 @router.get(

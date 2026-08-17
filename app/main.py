@@ -16,6 +16,34 @@ from app.core.logging import get_logger, setup_logging
 from app.core.middleware import RequestContextMiddleware
 
 
+async def _warm_dependencies(logger: Any) -> None:
+    """Construct the blocking service clients before serving traffic.
+
+    Building the Qdrant and MinIO clients costs ~2-3s on first use (module import
+    plus a version-compatibility request). Paying that inside the first readiness
+    probe makes the probe exceed its timeout and report a healthy dependency as
+    unreachable. Warming here is best-effort: a dependency that is down must not
+    prevent startup, because readiness — not startup — is what gates traffic.
+    """
+    import asyncio
+
+    def warm() -> None:
+        from app.retrieval.vector_store import get_vector_store
+        from app.storage.minio_service import get_storage_service
+
+        get_vector_store().client.get_collections()
+        get_storage_service().ensure_bucket_exists()
+
+    try:
+        await asyncio.wait_for(asyncio.to_thread(warm), timeout=20.0)
+        logger.info("Dependency clients warmed")
+    except Exception as exc:  # noqa: BLE001 - startup must survive a cold dependency
+        logger.warning(
+            "Dependency warm-up incomplete; readiness will report the details",
+            error=str(exc),
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan context manager for startup and shutdown hooks."""
@@ -30,6 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         env=settings.APP_ENV,
         inference_profile=settings.INFERENCE_PROFILE,
     )
+
+    await _warm_dependencies(logger)
 
     yield
 

@@ -132,3 +132,32 @@ class DocumentListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class IndexVersionResponse(BaseModel):
+    """Result of chunking and indexing one document version (Tasks 3.1, 3.2)."""
+
+    document_id: uuid.UUID
+    version_id: uuid.UUID
+
+    # Chunking
+    strategy: str
+    chunking_version: str
+    chunks_created: int
+    chunks_updated: int
+    chunks_removed: int
+    total_chunks: int
+    total_tokens: int
+
+    # Indexing
+    chunks_embedded: int
+    chunks_already_indexed: int
+    points_upserted: int
+    embedding_version: str
+    embedding_provider: str
+    embedding_dimensions: int
+    rate_limit_waits: int
+
+    was_noop: bool = Field(
+        description="True when re-running changed nothing — the idempotency signal"
+    )
