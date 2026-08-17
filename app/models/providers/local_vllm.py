@@ -52,11 +52,7 @@ class LocalVLLMProvider(BaseProvider):
             url = f"{self.base_url}/chat/completions"
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Local vLLM server returned error {res.status_code}: {res.text}",
-                        provider="vllm",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         data = await self.execute_with_retry(_call)

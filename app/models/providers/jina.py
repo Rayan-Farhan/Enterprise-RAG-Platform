@@ -5,7 +5,6 @@ from typing import Any
 
 import httpx
 
-from app.core.exceptions import ModelProviderException
 from app.models.providers.base import BaseProvider
 from app.models.schemas import (
     EmbeddingResult,
@@ -73,11 +72,7 @@ class JinaProvider(BaseProvider):
         async def _call() -> dict[str, Any]:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(self.embed_url, json=payload, headers=headers)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Jina Embeddings API returned error {res.status_code}: {res.text}",
-                        provider="jina",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         data = await self.execute_with_retry(_call)
@@ -142,11 +137,7 @@ class JinaProvider(BaseProvider):
         async def _call() -> dict[str, Any]:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(self.rerank_url, json=payload, headers=headers)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Jina Rerank API returned error {res.status_code}: {res.text}",
-                        provider="jina",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         data = await self.execute_with_retry(_call)

@@ -107,6 +107,31 @@ class ModelProviderException(AppException):
         )
 
 
+class ProviderRateLimitException(ModelProviderException):
+    """Raised when a provider rejects a call with HTTP 429.
+
+    Distinct from the generic provider failure because it is the one provider
+    error that is *expected* on the free tiers and that resolves on its own: the
+    correct response is to wait for the window the provider names and try again,
+    not to fail the caller. Treating it as a hard failure makes a bulk job (an
+    indexing pass, an evaluation run) report the rate limiter's behaviour as the
+    system's quality.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        provider: str,
+        retry_after_seconds: float | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        err_details = details or {}
+        if retry_after_seconds is not None:
+            err_details["retry_after_seconds"] = retry_after_seconds
+        super().__init__(message=message, provider=provider, details=err_details)
+        self.retry_after_seconds = retry_after_seconds
+
+
 class CircuitBreakerOpenException(AppException):
     """Raised when an operation is rejected by an open circuit breaker."""
 

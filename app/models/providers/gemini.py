@@ -82,12 +82,7 @@ class GeminiProvider(BaseProvider):
             url = f"{self.base_url}/{target_model}:generateContent?key={self.api_key}"
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Gemini API returned error {res.status_code}: {res.text}",
-                        provider="gemini",
-                        details={"status_code": res.status_code, "response": res.text},
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         self.require_credentials(self.api_key, "GEMINI_API_KEY")
@@ -211,11 +206,7 @@ class GeminiProvider(BaseProvider):
             url = f"{self.base_url}/{target_model}:generateContent?key={self.api_key}"
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Gemini Vision API error {res.status_code}: {res.text}",
-                        provider="gemini",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         self.require_credentials(self.api_key, "GEMINI_API_KEY")

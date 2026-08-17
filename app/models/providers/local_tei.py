@@ -5,7 +5,6 @@ from typing import Any
 
 import httpx
 
-from app.core.exceptions import ModelProviderException
 from app.models.providers.base import BaseProvider
 from app.models.schemas import (
     EmbeddingResult,
@@ -55,11 +54,7 @@ class LocalTEIProvider(BaseProvider):
             url = f"{self.embed_base_url}/embed"
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Local TEI embed error {res.status_code}: {res.text}",
-                        provider="tei",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         raw_embeddings = await self.execute_with_retry(_call)
@@ -106,11 +101,7 @@ class LocalTEIProvider(BaseProvider):
             url = f"{self.rerank_base_url}/rerank"
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Local TEI rerank error {res.status_code}: {res.text}",
-                        provider="tei",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         raw_results = await self.execute_with_retry(_call)

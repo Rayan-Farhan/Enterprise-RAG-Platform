@@ -57,11 +57,7 @@ class GroqProvider(BaseProvider):
         async def _call() -> dict[str, Any]:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(self.base_url, json=payload, headers=headers)
-                if res.status_code != 200:
-                    raise ModelProviderException(
-                        message=f"Groq API returned error {res.status_code}: {res.text}",
-                        provider="groq",
-                    )
+                self.raise_for_response(res)
                 return res.json()  # type: ignore[no-any-return]
 
         self.require_credentials(self.api_key, "GROQ_API_KEY")

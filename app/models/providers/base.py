@@ -1,21 +1,55 @@
 """Base provider abstractions and resilience helpers."""
 
 import asyncio
+import re
 from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
 import httpx
 from tenacity import (
     AsyncRetrying,
+    RetryCallState,
     retry_if_exception_type,
     stop_after_attempt,
     wait_random_exponential,
 )
 
-from app.core.exceptions import ModelProviderException
+from app.core.exceptions import ModelProviderException, ProviderRateLimitException
 from app.core.logging import get_logger
 
 T = TypeVar("T")
+
+#: Rate limits get their own, larger attempt budget. A 429 is a wait, not a
+#: fault, and the free tiers' per-minute windows routinely outlast the three
+#: attempts that are right for a flaky socket.
+RATE_LIMIT_MAX_ATTEMPTS = 6
+
+#: Cap on how long a single provider-requested wait is honoured. Without it a
+#: misconfigured or hostile Retry-After could stall a worker indefinitely.
+MAX_RETRY_AFTER_SECONDS = 90.0
+
+
+def parse_retry_after(response: httpx.Response) -> float | None:
+    """Extract the wait a 429 response asks for.
+
+    Two sources, in order of reliability: the standard ``Retry-After`` header,
+    and the seconds embedded in the body text that Groq and several other
+    OpenAI-compatible tiers return instead of (or alongside) the header.
+    """
+    header = response.headers.get("retry-after") or response.headers.get("x-ratelimit-reset")
+    if header:
+        try:
+            return float(header)
+        except ValueError:
+            pass  # An HTTP-date form is possible; fall through to the body.
+
+    match = re.search(r"try again in ([0-9.]+)\s*s", response.text, flags=re.IGNORECASE)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+    return None
 
 
 class BaseProvider:
@@ -49,6 +83,64 @@ class BaseProvider:
                 details={"missing_setting": setting_name},
             )
 
+    def raise_for_response(self, response: httpx.Response) -> None:
+        """Turn a non-200 provider response into the right exception type.
+
+        Every provider funnels through here so that 429 handling is uniform:
+        a rate limit raised as a generic provider error is not retried, and the
+        caller sees a failure that never needed to happen.
+        """
+        if response.status_code == 200:
+            return
+
+        if response.status_code == 429:
+            raise ProviderRateLimitException(
+                message=(
+                    f"{self.provider_name} rate limit reached "
+                    f"(HTTP 429): {response.text[:500]}"
+                ),
+                provider=self.provider_name,
+                retry_after_seconds=parse_retry_after(response),
+            )
+
+        raise ModelProviderException(
+            message=(
+                f"{self.provider_name} API returned error "
+                f"{response.status_code}: {response.text[:500]}"
+            ),
+            provider=self.provider_name,
+        )
+
+    def _stop(self, retry_state: RetryCallState) -> bool:
+        """Give rate limits a larger attempt budget than transport faults."""
+        exception = retry_state.outcome.exception() if retry_state.outcome else None
+        limit = (
+            RATE_LIMIT_MAX_ATTEMPTS
+            if isinstance(exception, ProviderRateLimitException)
+            else self.max_retries
+        )
+        return bool(stop_after_attempt(limit)(retry_state))
+
+    def _wait(self, retry_state: RetryCallState) -> float:
+        """Back off for the window the provider asked for, else exponentially.
+
+        Free tiers state a precise recovery time in the 429 body or in
+        ``Retry-After``. Ignoring it and backing off on a generic curve either
+        retries too early — burning an attempt and the quota with it — or waits
+        far longer than needed across hundreds of calls.
+        """
+        exception = retry_state.outcome.exception() if retry_state.outcome else None
+        if isinstance(exception, ProviderRateLimitException) and exception.retry_after_seconds:
+            wait_seconds = min(exception.retry_after_seconds, MAX_RETRY_AFTER_SECONDS)
+            self.logger.warning(
+                "provider_rate_limited",
+                provider=self.provider_name,
+                attempt=retry_state.attempt_number,
+                sleeping_seconds=round(wait_seconds, 1),
+            )
+            return wait_seconds + 0.5  # a small margin so the window has definitely closed
+        return float(wait_random_exponential(multiplier=1, max=10)(retry_state))
+
     async def execute_with_retry(
         self,
         func: Callable[..., Any],
@@ -59,9 +151,11 @@ class BaseProvider:
         try:
             async for attempt in AsyncRetrying(
                 reraise=True,
-                stop=stop_after_attempt(self.max_retries),
-                wait=wait_random_exponential(multiplier=1, max=10),
-                retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)),
+                stop=self._stop,
+                wait=self._wait,
+                retry=retry_if_exception_type(
+                    (httpx.HTTPError, httpx.TimeoutException, ProviderRateLimitException)
+                ),
             ):
                 with attempt:
                     return await func(*args, **kwargs)
