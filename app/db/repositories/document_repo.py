@@ -79,6 +79,46 @@ class DocumentRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_all_elements_by_version(
+        self,
+        version_id: uuid.UUID,
+        include_boilerplate: bool = True,
+    ) -> list[Element]:
+        """Fetch every canonical element for a version in reading order.
+
+        Chunking must see the whole version, so this deliberately has no limit
+        unlike :meth:`get_elements_by_version`, which backs a paginated endpoint.
+        """
+        stmt = (
+            select(Element)
+            .where(Element.version_id == version_id)
+            .order_by(Element.sequence_index.asc())
+        )
+        if not include_boilerplate:
+            stmt = stmt.where(Element.is_boilerplate.is_(False))
+
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_elements_by_element_ids(
+        self,
+        version_id: uuid.UUID,
+        element_ids: list[str],
+    ) -> list[Element]:
+        """Resolve canonical elements by their stable string element_ids.
+
+        Used by citation validation to prove a cited element genuinely exists.
+        """
+        if not element_ids:
+            return []
+        stmt = (
+            select(Element)
+            .where(Element.version_id == version_id, Element.element_id.in_(element_ids))
+            .order_by(Element.sequence_index.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def count_elements_by_version(self, version_id: uuid.UUID) -> int:
         """Count total elements for a version."""
         stmt = select(func.count()).select_from(Element).where(Element.version_id == version_id)
