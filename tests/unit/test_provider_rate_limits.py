@@ -122,6 +122,43 @@ class TestRetryBehaviour:
             await provider.execute_with_retry(always_timing_out)
         assert transport_faults == 2
 
+    @pytest.mark.asyncio
+    async def test_a_daily_quota_refusal_is_not_retried_at_all(self, monkeypatch) -> None:
+        # A wait longer than the cap is a per-day quota, not a per-minute window:
+        # it will not clear inside this process, so retrying spends six capped
+        # sleeps to arrive at the same refusal.
+        provider = BaseProvider("groq", max_retries=3)
+        monkeypatch.setattr(provider, "_wait", lambda retry_state: 0.0)
+        attempts = 0
+
+        async def call() -> str:
+            nonlocal attempts
+            attempts += 1
+            provider.raise_for_response(
+                _response(429, text="tokens per day (TPD) exceeded. try again in 578.4s")
+            )
+            raise AssertionError("unreachable")
+
+        with pytest.raises(ProviderRateLimitException):
+            await provider.execute_with_retry(call)
+        assert attempts == 1
+
+    @pytest.mark.asyncio
+    async def test_a_per_minute_window_is_still_retried(self, monkeypatch) -> None:
+        provider = BaseProvider("groq", max_retries=3)
+        monkeypatch.setattr(provider, "_wait", lambda retry_state: 0.0)
+        attempts = 0
+
+        async def call() -> str:
+            nonlocal attempts
+            attempts += 1
+            provider.raise_for_response(_response(429, text="try again in 19.5s"))
+            raise AssertionError("unreachable")
+
+        with pytest.raises(ProviderRateLimitException):
+            await provider.execute_with_retry(call)
+        assert attempts == RATE_LIMIT_MAX_ATTEMPTS
+
     def test_the_wait_honours_the_provider_stated_window(self) -> None:
         provider = BaseProvider("groq")
         state = _retry_state(ProviderRateLimitException("limited", "groq", retry_after_seconds=19.5))

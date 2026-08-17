@@ -54,6 +54,10 @@ class QuestionResult(BaseModel):
     retrieval_latency_ms: float = 0.0
     generation_latency_ms: float = 0.0
     token_counts: dict[str, int] = Field(default_factory=dict)
+    evidence_tokens: int = Field(
+        default=0,
+        description="Context tokens sent to the generator; replayed when a run is resumed",
+    )
 
     error: str | None = Field(
         default=None,
@@ -61,9 +65,27 @@ class QuestionResult(BaseModel):
     )
     expected_to_fail_until_stage: int | None = None
 
+    evaluated_at: datetime = Field(
+        default_factory=_now,
+        description="When this question was evaluated; differs across a resumed multi-day run",
+    )
+
     @property
     def failed(self) -> bool:
         return self.error is not None
+
+    @property
+    def failed_on_quota(self) -> bool:
+        """True when the failure was a provider quota or rate limit, not the system.
+
+        These results are never checkpointed: the question was not measured, it
+        was refused, and recording it would bake an infrastructure limit into the
+        experiment as if it were pipeline behaviour.
+        """
+        if self.error is None:
+            return False
+        haystack = self.error.lower()
+        return "ratelimit" in haystack.replace(" ", "") or "429" in haystack
 
     def all_metrics(self) -> dict[str, float]:
         """Every metric this question contributed, in one mapping."""
@@ -103,6 +125,21 @@ class ExperimentRun(BaseModel):
     results: list[QuestionResult] = Field(default_factory=list)
 
     notes: str = ""
+
+    @property
+    def evaluation_days(self) -> list[str]:
+        """The distinct UTC dates on which this run's questions were evaluated.
+
+        More than one means the run was resumed across a quota boundary. That is
+        expected on the free tiers and it is not free of consequence: a provider
+        can change its served model between days, so the list is recorded and
+        reported rather than left for someone to infer from timestamps.
+        """
+        return sorted({result.evaluated_at.date().isoformat() for result in self.results})
+
+    @property
+    def spans_multiple_days(self) -> bool:
+        return len(self.evaluation_days) > 1
 
     @property
     def duration_seconds(self) -> float:

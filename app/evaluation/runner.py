@@ -23,7 +23,7 @@ import subprocess
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,30 @@ from app.evaluation.schemas import DatasetSplit, GoldenQuestion
 from app.generation.service import AnswerResult, GenerationService, get_generation_service
 
 logger = get_logger("app.evaluation.runner")
+
+#: Consecutive quota refusals after which the run stops rather than grinding
+#: through the rest of the split recording failures. On a metered free tier the
+#: daily budget does not come back within a run, so continuing turns a partial
+#: measurement into a bad one — a 60% failure rate that then gets committed and
+#: cited. Two in a row is enough: a single 429 is already retried six times with
+#: provider-stated backoff before it ever reaches here.
+QUOTA_ABORT_THRESHOLD = 2
+
+
+class QuotaExhausted(RuntimeError):
+    """Raised when the provider's budget is gone and the run should be resumed later.
+
+    Carries the partial results so the caller can checkpoint and report progress
+    rather than losing the questions already paid for.
+    """
+
+    def __init__(self, completed: int, total: int, detail: str) -> None:
+        super().__init__(
+            f"Provider quota exhausted after {completed}/{total} questions: {detail}"
+        )
+        self.completed = completed
+        self.total = total
+        self.detail = detail
 
 
 def current_git_commit() -> str | None:
@@ -113,6 +137,8 @@ class ExperimentRunner:
         description: str = "",
         notes: str = "",
         judge_enabled: bool | None = None,
+        completed: Mapping[str, QuestionResult] | None = None,
+        on_result: Callable[[QuestionResult], None] | None = None,
     ) -> ExperimentRun:
         """Evaluate every question and return the completed run record.
 
@@ -120,6 +146,17 @@ class ExperimentRunner:
         ``AsyncSession``. Each question gets its own session: sharing one across
         concurrent questions would serialise them on the connection and make the
         recorded latencies a measurement of the pool rather than the pipeline.
+
+        ``completed`` carries results recovered from a checkpoint; those
+        questions are not re-evaluated. ``on_result`` is called as each new
+        question finishes, so a caller can persist progress before the next one
+        is attempted. Together they let one experiment span several days of a
+        metered provider's budget.
+
+        Raises :class:`QuotaExhausted` when the provider's budget is gone. The
+        alternative — grinding through the remaining questions and recording each
+        as a failure — produces a run that looks like a catastrophic quality
+        regression and is really an accounting limit.
         """
         run = ExperimentRun(
             run_id=uuid.uuid4(),
@@ -136,21 +173,52 @@ class ExperimentRunner:
         )
 
         use_judge = self.settings.EVAL_JUDGE_ENABLED if judge_enabled is None else judge_enabled
-        semaphore = asyncio.Semaphore(self.settings.EVAL_CONCURRENCY)
         system = SystemMetrics(total_questions=len(questions))
+
+        recovered = dict(completed or {})
+        wanted = {question.question_id for question in questions}
+        results: list[QuestionResult] = [
+            result for question_id, result in recovered.items() if question_id in wanted
+        ]
+        for result in results:
+            self._replay(result, system)
+
+        pending = [q for q in questions if q.question_id not in recovered]
 
         logger.info(
             "experiment_started",
             name=name,
             split=split.value,
             questions=len(questions),
+            resumed=len(results),
+            pending=len(pending),
             concurrency=self.settings.EVAL_CONCURRENCY,
             judge=use_judge,
         )
 
-        async def evaluate(question: GoldenQuestion) -> QuestionResult:
-            async with semaphore:
-                return await self._evaluate_question(
+        # A plain `gather` over every question cannot stop early, and stopping
+        # early is the whole point once a provider's daily budget is finite. A
+        # small worker pool gives the same bounded concurrency and can abandon
+        # the remaining queue the moment the budget is gone.
+        queue: asyncio.Queue[GoldenQuestion] = asyncio.Queue()
+        for question in pending:
+            queue.put_nowait(question)
+
+        quota_failures = 0
+        exhausted: QuotaExhausted | None = None
+        lock = asyncio.Lock()
+
+        async def worker() -> None:
+            nonlocal quota_failures, exhausted
+            while True:
+                if exhausted is not None:
+                    return
+                try:
+                    question = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+
+                result = await self._evaluate_question(
                     question=question,
                     session_factory=session_factory,
                     run=run,
@@ -158,7 +226,35 @@ class ExperimentRunner:
                     use_judge=use_judge,
                 )
 
-        results = await asyncio.gather(*(evaluate(q) for q in questions))
+                async with lock:
+                    if result.failed_on_quota:
+                        quota_failures += 1
+                        if quota_failures >= QUOTA_ABORT_THRESHOLD and exhausted is None:
+                            exhausted = QuotaExhausted(
+                                completed=len(results),
+                                total=len(questions),
+                                detail=result.error or "provider refused with a rate limit",
+                            )
+                        continue
+
+                    quota_failures = 0
+                    results.append(result)
+                    if on_result is not None:
+                        on_result(result)
+
+        await asyncio.gather(
+            *(worker() for _ in range(max(1, self.settings.EVAL_CONCURRENCY)))
+        )
+
+        if exhausted is not None:
+            logger.warning(
+                "experiment_quota_exhausted",
+                name=name,
+                completed=len(results),
+                total=len(questions),
+            )
+            raise exhausted
+
         run.results = sorted(results, key=lambda r: r.question_id)
 
         run.metrics = self._aggregate(run.results)
@@ -171,8 +267,29 @@ class ExperimentRunner:
             name=name,
             duration_s=round(run.duration_seconds, 1),
             failures=system.failures,
+            evaluation_days=run.evaluation_days,
         )
         return run
+
+    @staticmethod
+    def _replay(result: QuestionResult, system: SystemMetrics) -> None:
+        """Fold a checkpointed result back into the system metrics.
+
+        Resumed questions were measured on an earlier day; their latencies and
+        token counts belong in the run's aggregates exactly as if they had just
+        been evaluated, otherwise the percentiles describe only the final day.
+        """
+        if result.failed:
+            system.record_failure()
+            return
+
+        system.record(
+            total_ms=result.latency_ms,
+            retrieval_ms=result.retrieval_latency_ms,
+            generation_ms=result.generation_latency_ms,
+            token_counts=result.token_counts,
+            evidence_tokens=result.evidence_tokens,
+        )
 
     # -- one question ------------------------------------------------------
 
@@ -270,6 +387,7 @@ class ExperimentRunner:
         result.retrieval_latency_ms = answer.retrieval_latency_ms
         result.generation_latency_ms = answer.generation_latency_ms
         result.token_counts = dict(answer.token_counts)
+        result.evidence_tokens = answer.evidence_tokens
 
     @staticmethod
     def _retrieval_case(

@@ -31,7 +31,7 @@ from app.evaluation.human_review import (
 )
 from app.evaluation.repository import ExperimentRepository
 from app.evaluation.results import ExperimentRun
-from app.evaluation.runner import ExperimentRunner
+from app.evaluation.runner import ExperimentRunner, QuotaExhausted
 from app.evaluation.schemas import DatasetSplit, GoldenQuestion
 
 logger = get_logger("app.evaluation.cli")
@@ -119,23 +119,55 @@ async def cmd_run(args: argparse.Namespace) -> int:
     if args.limit:
         questions = questions[: args.limit]
 
+    if args.restart:
+        storage.clear_checkpoint(args.name)
+
+    completed = storage.load_checkpoint(args.name)
+    remaining = len([q for q in questions if q.question_id not in completed])
+
     print(f"Running '{args.name}' over {len(questions)} {split.value} questions…")
+    if completed:
+        print(
+            f"Resuming from checkpoint: {len(completed)} already evaluated, "
+            f"{remaining} to go. Use --restart to discard and start over."
+        )
 
     runner = ExperimentRunner(settings=settings)
     session_factory = get_session_factory()
 
-    run = await runner.run(
-        name=args.name,
-        questions=questions,
-        session_factory=session_factory,
-        split=split,
-        dataset_version=args.dataset_version,
-        description=args.description,
-        notes=args.notes,
-        judge_enabled=None if args.judge else False,
-    )
+    try:
+        run = await runner.run(
+            name=args.name,
+            questions=questions,
+            session_factory=session_factory,
+            split=split,
+            dataset_version=args.dataset_version,
+            description=args.description,
+            notes=args.notes,
+            judge_enabled=None if args.judge else False,
+            completed=completed,
+            on_result=lambda result: storage.append_checkpoint(args.name, result),
+        )
+    except QuotaExhausted as exc:
+        # Exit 3, distinct from a crash: the run is fine, the day's budget is
+        # not. The checkpoint holds everything paid for so far.
+        print(
+            f"\nPROVIDER QUOTA EXHAUSTED — {exc.completed}/{exc.total} questions evaluated.\n"
+            f"{exc.detail}\n\n"
+            f"Progress is checkpointed at {storage.checkpoint_path(args.name)}.\n"
+            f"Re-run the same command when the quota resets to continue from here.",
+            file=sys.stderr,
+        )
+        return 3
 
     path = storage.save_run_file(run)
+    storage.clear_checkpoint(args.name)
+    if run.spans_multiple_days:
+        print(
+            f"\nNOTE: this run was evaluated across {len(run.evaluation_days)} days "
+            f"({', '.join(run.evaluation_days)}). A provider can change its served "
+            f"model between days; the dates are recorded in the run file."
+        )
     print(f"\n{run.summary_line()}")
     print(f"Wrote {path}")
 
@@ -347,6 +379,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--no-judge", dest="judge", action="store_false", help="skip Layer 2")
     run_parser.add_argument(
         "--no-db", action="store_true", help="write the file but skip PostgreSQL"
+    )
+    run_parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="discard any checkpoint and evaluate every question again",
     )
     run_parser.add_argument("--unlock-test-split", default=None, help=argparse.SUPPRESS)
     run_parser.set_defaults(func=cmd_run, judge=True)

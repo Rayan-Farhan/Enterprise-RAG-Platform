@@ -112,14 +112,28 @@ class BaseProvider:
         )
 
     def _stop(self, retry_state: RetryCallState) -> bool:
-        """Give rate limits a larger attempt budget than transport faults."""
+        """Give rate limits a larger attempt budget than transport faults.
+
+        With one exception: when the provider asks for longer than
+        ``MAX_RETRY_AFTER_SECONDS``, stop immediately. A wait that long is a
+        *daily* quota, not a per-minute window, and it will not clear inside this
+        process. Retrying anyway spends six capped sleeps — about nine minutes —
+        per question to arrive at the same refusal, which on a 100-question run
+        is hours of sleeping to learn something the first response already said.
+        """
         exception = retry_state.outcome.exception() if retry_state.outcome else None
-        limit = (
-            RATE_LIMIT_MAX_ATTEMPTS
-            if isinstance(exception, ProviderRateLimitException)
-            else self.max_retries
-        )
-        return bool(stop_after_attempt(limit)(retry_state))
+        if isinstance(exception, ProviderRateLimitException):
+            requested = exception.retry_after_seconds
+            if requested is not None and requested > MAX_RETRY_AFTER_SECONDS:
+                self.logger.warning(
+                    "provider_quota_exhausted",
+                    provider=self.provider_name,
+                    retry_after_seconds=round(requested, 1),
+                )
+                return True
+            return bool(stop_after_attempt(RATE_LIMIT_MAX_ATTEMPTS)(retry_state))
+
+        return bool(stop_after_attempt(self.max_retries)(retry_state))
 
     def _wait(self, retry_state: RetryCallState) -> float:
         """Back off for the window the provider asked for, else exponentially.
@@ -159,6 +173,13 @@ class BaseProvider:
             ):
                 with attempt:
                     return await func(*args, **kwargs)
+        except ProviderRateLimitException:
+            # Re-raised unchanged rather than wrapped: callers distinguish "the
+            # provider refused on quota" from "the provider is broken", and the
+            # evaluation runner uses that distinction to decide whether a
+            # question was measured or merely declined.
+            self.logger.warning("provider_rate_limit_exhausted", provider=self.provider_name)
+            raise
         except Exception as exc:
             self.logger.error("Provider execution failed after retries", error=str(exc))
             raise ModelProviderException(

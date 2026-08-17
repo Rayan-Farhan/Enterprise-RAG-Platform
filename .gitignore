@@ -79,3 +79,5 @@ logs/
 scratch/
 
 /docs
+# Partial evaluation runs; the finished record beside them is what gets committed.
+evaluation/results/.checkpoints/

@@ -16,11 +16,15 @@ import json
 from pathlib import Path
 
 from app.core.logging import get_logger
-from app.evaluation.results import ExperimentRun
+from app.evaluation.results import ExperimentRun, QuestionResult
 
 logger = get_logger("app.evaluation.storage")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: Partial runs live beside the finished records but out of the way of
+#: `list_run_files`, so an interrupted run can never be mistaken for a result.
+CHECKPOINT_DIRNAME = ".checkpoints"
 
 
 def results_dir(configured: str = "evaluation/results") -> Path:
@@ -67,6 +71,76 @@ def list_run_files(directory: Path | None = None) -> list[str]:
     if not target.is_dir():
         return []
     return sorted(p.stem for p in target.glob("*.json"))
+
+
+# --------------------------------------------------------------------------
+# Checkpoints — multi-day runs on a metered provider
+# --------------------------------------------------------------------------
+
+
+def checkpoint_path(name: str, directory: Path | None = None) -> Path:
+    """Path of the append-only partial-results file for a named experiment."""
+    safe = name.replace("/", "-").replace("\\", "-")
+    return (directory or results_dir()) / CHECKPOINT_DIRNAME / f"{safe}.jsonl"
+
+
+def append_checkpoint(
+    name: str,
+    result: QuestionResult,
+    directory: Path | None = None,
+) -> None:
+    """Record one evaluated question, immediately.
+
+    Append-only JSONL, flushed per line, because the failure mode this exists for
+    is the process dying mid-run when the daily token budget runs out. A format
+    that has to be rewritten whole (or held in memory until the end) loses
+    everything that was already paid for.
+
+    Quota failures are never written: the question was refused, not measured.
+    """
+    if result.failed_on_quota:
+        return
+
+    path = checkpoint_path(name, directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(result.model_dump_json() + "\n")
+        handle.flush()
+
+
+def load_checkpoint(name: str, directory: Path | None = None) -> dict[str, QuestionResult]:
+    """Read a partial run back, keyed by ``question_id``.
+
+    A malformed trailing line is dropped rather than fatal: it is what a process
+    killed mid-write leaves behind, and losing one question is better than losing
+    the day's work. Later entries win, so re-evaluating a question overwrites it.
+    """
+    path = checkpoint_path(name, directory)
+    if not path.is_file():
+        return {}
+
+    results: dict[str, QuestionResult] = {}
+    for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            result = QuestionResult.model_validate_json(line)
+        except ValueError:
+            logger.warning("checkpoint_line_unreadable", path=str(path), line=line_number)
+            continue
+        results[result.question_id] = result
+
+    logger.info("checkpoint_loaded", name=name, questions=len(results))
+    return results
+
+
+def clear_checkpoint(name: str, directory: Path | None = None) -> None:
+    """Remove a completed run's checkpoint."""
+    path = checkpoint_path(name, directory)
+    if path.is_file():
+        path.unlink()
+        logger.info("checkpoint_cleared", name=name)
 
 
 def is_comparable(run: ExperimentRun, reference: ExperimentRun) -> bool:
