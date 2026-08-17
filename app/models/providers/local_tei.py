@@ -62,27 +62,7 @@ class LocalTEIProvider(BaseProvider):
                     )
                 return res.json()  # type: ignore[no-any-return]
 
-        try:
-            raw_embeddings = await self.execute_with_retry(_call)
-        except Exception:
-            # Fallback stub for development/testing when local TEI is offline
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            mock_embeddings = [
-                EmbeddingResult(embedding=[0.02 * (i + j) for j in range(128)], index=i)
-                for i in range(len(texts))
-            ]
-            return EmbeddingsResponse(
-                embeddings=mock_embeddings,
-                metadata=ModelMetadata(
-                    provider="tei",
-                    model_name=target_model,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(
-                        prompt_tokens=len(texts) * 5, total_tokens=len(texts) * 5
-                    ),
-                ),
-            )
-
+        raw_embeddings = await self.execute_with_retry(_call)
         duration_ms = (time.perf_counter() - start_time) * 1000.0
         embeddings = [
             EmbeddingResult(embedding=emb, index=i) for i, emb in enumerate(raw_embeddings)
@@ -133,29 +113,7 @@ class LocalTEIProvider(BaseProvider):
                     )
                 return res.json()  # type: ignore[no-any-return]
 
-        try:
-            raw_results = await self.execute_with_retry(_call)
-        except Exception:
-            # Fallback stub for dev testing
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            mock_results = [
-                ScoredDocument(
-                    index=i,
-                    text=doc,
-                    score=max(0.0, 1.0 - (i * 0.1)),
-                )
-                for i, doc in enumerate(documents[: top_k or len(documents)])
-            ]
-            return RerankResult(
-                results=mock_results,
-                metadata=ModelMetadata(
-                    provider="tei",
-                    model_name=target_model,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(prompt_tokens=20, total_tokens=20),
-                ),
-            )
-
+        raw_results = await self.execute_with_retry(_call)
         duration_ms = (time.perf_counter() - start_time) * 1000.0
         scored_docs = [
             ScoredDocument(

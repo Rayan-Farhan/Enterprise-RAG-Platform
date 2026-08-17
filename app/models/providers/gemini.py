@@ -12,13 +12,30 @@ from app.models.schemas import GenerationResult, ImagePayload, ModelMetadata, To
 
 
 class GeminiProvider(BaseProvider):
-    """Provider communicating with the Google Gemini API."""
+    """Provider communicating with the Google Gemini API.
+
+    Gemini 3.x models are reasoning models: they always spend "thought" tokens
+    before answering, and `thinkingBudget: 0` is rejected with a 400 on
+    `gemini-3.6-flash`. Two consequences are handled here.
+
+    1. Thought tokens come out of `maxOutputTokens`. A small budget is consumed
+       entirely by thinking and the response contains no text at all, with
+       `finishReason: MAX_TOKENS` — so a floor is enforced.
+    2. Response parts may include thought parts. Reading `parts[0].text` returns
+       an empty string in that case, which previously surfaced as a silently blank
+       answer rather than an error.
+    """
+
+    # Observed: a trivial prompt spent 13-123 thought tokens before emitting any
+    # text. This floor keeps short calls (smoke tests, classification in Stage 10)
+    # from returning empty results.
+    MIN_OUTPUT_TOKENS = 512
 
     def __init__(
         self,
         api_key: str,
-        default_model: str = "gemini-2.0-flash",
-        vision_model: str = "gemini-2.0-flash",
+        default_model: str = "gemini-3.6-flash",
+        vision_model: str = "gemini-3.6-flash",
         timeout_seconds: float = 45.0,
     ) -> None:
         super().__init__(provider_name="gemini", timeout_seconds=timeout_seconds)
@@ -57,7 +74,7 @@ class GeminiProvider(BaseProvider):
             "contents": contents,
             "generationConfig": {
                 "temperature": temperature,
-                "maxOutputTokens": max_tokens,
+                "maxOutputTokens": max(max_tokens, self.MIN_OUTPUT_TOKENS),
             },
         }
 
@@ -73,38 +90,75 @@ class GeminiProvider(BaseProvider):
                     )
                 return res.json()  # type: ignore[no-any-return]
 
-        if not self.api_key:
-            # Mock / stub response when API key is not yet set in dev environment
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            return GenerationResult(
-                text="[Dev Mock] Gemini response (GEMINI_API_KEY not configured)",
-                metadata=ModelMetadata(
-                    provider="gemini",
-                    model_name=target_model,
-                    prompt_version=prompt_version,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(
-                        prompt_tokens=10, completion_tokens=10, total_tokens=20
-                    ),
-                ),
-            )
+        self.require_credentials(self.api_key, "GEMINI_API_KEY")
 
         data = await self.execute_with_retry(_call)
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
+        return self._to_result(
+            data=data,
+            target_model=target_model,
+            prompt_version=prompt_version,
+            duration_ms=duration_ms,
+        )
+
+    def _to_result(
+        self,
+        data: dict[str, Any],
+        target_model: str,
+        prompt_version: str | None,
+        duration_ms: float,
+    ) -> GenerationResult:
+        """Convert a Gemini response into a GenerationResult.
+
+        Concatenates every non-thought text part rather than reading `parts[0]`,
+        and treats an empty answer as a failure rather than returning "".
+        """
         candidates = data.get("candidates", [])
         if not candidates:
-            raise ModelProviderException("No candidates returned from Gemini", provider="gemini")
+            raise ModelProviderException(
+                f"No candidates returned from Gemini. "
+                f"promptFeedback={data.get('promptFeedback')}",
+                provider="gemini",
+                details={"prompt_feedback": data.get("promptFeedback")},
+            )
 
         candidate = candidates[0]
-        text = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
+        finish_reason = candidate.get("finishReason")
+        parts = candidate.get("content", {}).get("parts", []) or []
+        text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
+
         usage = data.get("usageMetadata", {})
+        thought_tokens = int(usage.get("thoughtsTokenCount", 0) or 0)
+
+        if not text.strip():
+            if finish_reason == "MAX_TOKENS":
+                raise ModelProviderException(
+                    f"Gemini returned no text: the output budget was exhausted, "
+                    f"{thought_tokens} of it by reasoning tokens. Raise max_tokens "
+                    f"(minimum enforced: {self.MIN_OUTPUT_TOKENS}).",
+                    provider="gemini",
+                    details={
+                        "finish_reason": finish_reason,
+                        "thought_tokens": thought_tokens,
+                    },
+                )
+            raise ModelProviderException(
+                f"Gemini returned an empty response (finishReason={finish_reason}). "
+                f"This usually means the prompt was blocked by a safety filter.",
+                provider="gemini",
+                details={"finish_reason": finish_reason},
+            )
 
         return GenerationResult(
             text=text,
+            finish_reason=finish_reason or "stop",
             metadata=ModelMetadata(
                 provider="gemini",
                 model_name=target_model,
+                # Gemini reports the resolved model, which matters when the request
+                # used a floating alias such as `gemini-flash-latest`.
+                model_version=data.get("modelVersion"),
                 prompt_version=prompt_version,
                 latency_ms=duration_ms,
                 token_counts=TokenCounts(
@@ -112,6 +166,7 @@ class GeminiProvider(BaseProvider):
                     completion_tokens=usage.get("candidatesTokenCount", 0),
                     total_tokens=usage.get("totalTokenCount", 0),
                 ),
+                details={"thought_tokens": thought_tokens} if thought_tokens else {},
             ),
         )
 
@@ -148,7 +203,7 @@ class GeminiProvider(BaseProvider):
         payload = {
             "contents": [{"parts": parts}],
             "generationConfig": {
-                "maxOutputTokens": max_tokens,
+                "maxOutputTokens": max(max_tokens, self.MIN_OUTPUT_TOKENS),
             },
         }
 
@@ -163,45 +218,14 @@ class GeminiProvider(BaseProvider):
                     )
                 return res.json()  # type: ignore[no-any-return]
 
-        if not self.api_key:
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            return GenerationResult(
-                text="[Dev Mock] Gemini Vision response (GEMINI_API_KEY not configured)",
-                metadata=ModelMetadata(
-                    provider="gemini",
-                    model_name=target_model,
-                    prompt_version=prompt_version,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(
-                        prompt_tokens=20, completion_tokens=10, total_tokens=30
-                    ),
-                ),
-            )
+        self.require_credentials(self.api_key, "GEMINI_API_KEY")
 
         data = await self.execute_with_retry(_call)
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
-        candidates = data.get("candidates", [])
-        if not candidates:
-            raise ModelProviderException(
-                "No candidates returned from Gemini Vision", provider="gemini"
-            )
-
-        candidate = candidates[0]
-        text = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
-        usage = data.get("usageMetadata", {})
-
-        return GenerationResult(
-            text=text,
-            metadata=ModelMetadata(
-                provider="gemini",
-                model_name=target_model,
-                prompt_version=prompt_version,
-                latency_ms=duration_ms,
-                token_counts=TokenCounts(
-                    prompt_tokens=usage.get("promptTokenCount", 0),
-                    completion_tokens=usage.get("candidatesTokenCount", 0),
-                    total_tokens=usage.get("totalTokenCount", 0),
-                ),
-            ),
+        return self._to_result(
+            data=data,
+            target_model=target_model,
+            prompt_version=prompt_version,
+            duration_ms=duration_ms,
         )

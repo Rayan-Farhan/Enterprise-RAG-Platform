@@ -64,20 +64,7 @@ class GroqProvider(BaseProvider):
                     )
                 return res.json()  # type: ignore[no-any-return]
 
-        if not self.api_key:
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            return GenerationResult(
-                text="[Dev Mock] Groq response (GROQ_API_KEY not configured)",
-                metadata=ModelMetadata(
-                    provider="groq",
-                    model_name=target_model,
-                    prompt_version=prompt_version,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(
-                        prompt_tokens=10, completion_tokens=10, total_tokens=20
-                    ),
-                ),
-            )
+        self.require_credentials(self.api_key, "GROQ_API_KEY")
 
         data = await self.execute_with_retry(_call)
         duration_ms = (time.perf_counter() - start_time) * 1000.0

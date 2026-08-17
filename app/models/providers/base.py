@@ -29,6 +29,26 @@ class BaseProvider:
         self.max_retries = max_retries
         self.logger = get_logger(f"app.models.{provider_name}")
 
+    def require_credentials(self, api_key: str | None, setting_name: str) -> None:
+        """Fail loudly when a provider has no credentials.
+
+        Providers must never substitute placeholder output for a real call. A
+        fabricated embedding is indistinguishable from a real one downstream: it
+        indexes cleanly, retrieves cleanly, and silently destroys answer quality
+        while every health signal stays green. Use `INFERENCE_PROFILE=stub` when a
+        keyless run is genuinely wanted — that path is explicit and self-labelling.
+        """
+        if not api_key:
+            raise ModelProviderException(
+                message=(
+                    f"Provider '{self.provider_name}' has no credentials: {setting_name} is "
+                    f"not set. Set it, or run with INFERENCE_PROFILE=stub for an explicitly "
+                    f"fake gateway."
+                ),
+                provider=self.provider_name,
+                details={"missing_setting": setting_name},
+            )
+
     async def execute_with_retry(
         self,
         func: Callable[..., Any],

@@ -55,24 +55,7 @@ class JinaProvider(BaseProvider):
                 ),
             )
 
-        if not self.api_key:
-            # Mock / stub embeddings for dev testing when API key is not configured
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            mock_embeddings = [
-                EmbeddingResult(embedding=[0.01 * (i + j) for j in range(128)], index=i)
-                for i in range(len(texts))
-            ]
-            return EmbeddingsResponse(
-                embeddings=mock_embeddings,
-                metadata=ModelMetadata(
-                    provider="jina",
-                    model_name=target_model,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(
-                        prompt_tokens=len(texts) * 5, total_tokens=len(texts) * 5
-                    ),
-                ),
-            )
+        self.require_credentials(self.api_key, "JINA_API_KEY")
 
         payload: dict[str, Any] = {
             "model": target_model,
@@ -141,26 +124,7 @@ class JinaProvider(BaseProvider):
                 ),
             )
 
-        if not self.api_key:
-            # Mock / stub rerank output for dev testing
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            mock_results = [
-                ScoredDocument(
-                    index=i,
-                    text=doc,
-                    score=max(0.0, 1.0 - (i * 0.1)),
-                )
-                for i, doc in enumerate(documents[: top_k or len(documents)])
-            ]
-            return RerankResult(
-                results=mock_results,
-                metadata=ModelMetadata(
-                    provider="jina",
-                    model_name=target_model,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(prompt_tokens=20, total_tokens=20),
-                ),
-            )
+        self.require_credentials(self.api_key, "JINA_API_KEY")
 
         payload: dict[str, Any] = {
             "model": target_model,

@@ -10,6 +10,7 @@ from app.models.providers.groq import GroqProvider
 from app.models.providers.jina import JinaProvider
 from app.models.providers.local_tei import LocalTEIProvider
 from app.models.providers.local_vllm import LocalVLLMProvider
+from app.models.providers.stub import StubProvider
 from app.models.schemas import (
     EmbeddingsResponse,
     GenerationResult,
@@ -233,11 +234,85 @@ class LocalModelGateway:
         )
 
 
-@lru_cache(maxsize=2)
+class StubModelGateway:
+    """Explicitly fake gateway for keyless development (INFERENCE_PROFILE=stub).
+
+    Selected only by explicit configuration, never as a fallback. Every response is
+    labelled `provider="stub"`, so results produced under this profile can never be
+    mistaken for a real run. See `app/models/providers/stub.py`.
+    """
+
+    def __init__(self, settings: AppSettings) -> None:
+        self.settings = settings
+        self.logger = get_logger("app.models.gateway.stub")
+        self.stub = StubProvider(dimensions=settings.EMBEDDING_DIMENSIONS)
+        self.logger.warning(
+            "stub_inference_profile_active",
+            detail="No model is being called. Results are not valid evaluation data.",
+        )
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        model_name: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2048,
+        prompt_version: str | None = None,
+    ) -> GenerationResult:
+        return await self.stub.generate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            prompt_version=prompt_version,
+        )
+
+    async def embed(
+        self,
+        texts: list[str],
+        model_name: str | None = None,
+    ) -> EmbeddingsResponse:
+        return await self.stub.embed(texts=texts, model_name=model_name)
+
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        top_k: int | None = None,
+        model_name: str | None = None,
+    ) -> RerankResult:
+        return await self.stub.rerank(
+            query=query, documents=documents, top_k=top_k, model_name=model_name
+        )
+
+    async def vision(
+        self,
+        prompt: str,
+        images: list[ImagePayload],
+        system_prompt: str | None = None,
+        model_name: str | None = None,
+        max_tokens: int = 2048,
+        prompt_version: str | None = None,
+    ) -> GenerationResult:
+        return await self.stub.vision(
+            prompt=prompt,
+            images=images,
+            system_prompt=system_prompt,
+            model_name=model_name,
+            max_tokens=max_tokens,
+            prompt_version=prompt_version,
+        )
+
+
+@lru_cache(maxsize=3)
 def get_model_gateway(profile: str | None = None) -> ModelGateway:
     """Factory function returning the active ModelGateway instance.
 
-    Controlled by INFERENCE_PROFILE ('hosted' or 'local').
+    Controlled by INFERENCE_PROFILE ('hosted', 'local', or 'stub'). This is the only
+    place that decides which provider classes are constructed — application code
+    never learns which profile is active (ADR-046, ADR-051).
     """
     settings = get_settings()
     active_profile = profile or settings.INFERENCE_PROFILE
@@ -246,7 +321,10 @@ def get_model_gateway(profile: str | None = None) -> ModelGateway:
         return HostedModelGateway(settings)
     elif active_profile == "local":
         return LocalModelGateway(settings)
+    elif active_profile == "stub":
+        return StubModelGateway(settings)
     else:
         raise ValueError(
-            f"Unknown INFERENCE_PROFILE: {active_profile}. Must be 'hosted' or 'local'."
+            f"Unknown INFERENCE_PROFILE: {active_profile}. "
+            f"Must be 'hosted', 'local', or 'stub'."
         )

@@ -59,24 +59,7 @@ class LocalVLLMProvider(BaseProvider):
                     )
                 return res.json()  # type: ignore[no-any-return]
 
-        try:
-            data = await self.execute_with_retry(_call)
-        except Exception:
-            # Fallback stub for development/testing when local vLLM server is offline
-            duration_ms = (time.perf_counter() - start_time) * 1000.0
-            return GenerationResult(
-                text=f"[Local vLLM Stub] Response for prompt: {prompt[:30]}...",
-                metadata=ModelMetadata(
-                    provider="vllm",
-                    model_name=target_model,
-                    prompt_version=prompt_version,
-                    latency_ms=duration_ms,
-                    token_counts=TokenCounts(
-                        prompt_tokens=15, completion_tokens=15, total_tokens=30
-                    ),
-                ),
-            )
-
+        data = await self.execute_with_retry(_call)
         duration_ms = (time.perf_counter() - start_time) * 1000.0
         choices = data.get("choices", [])
         text = choices[0].get("message", {}).get("content", "") if choices else ""
@@ -106,18 +89,19 @@ class LocalVLLMProvider(BaseProvider):
         max_tokens: int = 2048,
         prompt_version: str | None = None,
     ) -> GenerationResult:
-        """Multimodal generation with local vLLM VLM."""
-        target_model = model_name or self.default_model
-        start_time = time.perf_counter()
-        duration_ms = (time.perf_counter() - start_time) * 1000.0
+        """Multimodal generation with local vLLM VLM.
 
-        return GenerationResult(
-            text=f"[Local vLLM VLM Stub] Analyzed {len(images)} images for prompt: {prompt[:30]}...",
-            metadata=ModelMetadata(
-                provider="vllm",
-                model_name=target_model,
-                prompt_version=prompt_version,
-                latency_ms=duration_ms,
-                token_counts=TokenCounts(prompt_tokens=30, completion_tokens=15, total_tokens=45),
+        Not implemented yet: the local VLM serving path is wired in Stage 9 along
+        with the rest of multimodal retrieval (ADR-015). It raises rather than
+        returning placeholder text, because a caller cannot tell fabricated vision
+        output from real output.
+        """
+        raise ModelProviderException(
+            message=(
+                "Local vLLM vision is not implemented yet (wired in Stage 9). "
+                "Use INFERENCE_PROFILE=hosted for vision, or INFERENCE_PROFILE=stub "
+                "for an explicitly fake gateway."
             ),
+            provider="vllm",
+            details={"model": model_name or self.default_model, "images": len(images)},
         )
