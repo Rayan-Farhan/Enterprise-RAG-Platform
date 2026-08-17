@@ -121,6 +121,39 @@ jobs:
           alembic downgrade -1
           alembic upgrade head
 
+  evaluation-gate:
+    name: Evaluation Dataset & Regression Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Task 4.1. The corpus is not available in CI, so evidence pointers cannot
+      # be resolved here — that check runs locally via `make eval-validate`.
+      # What CI can guarantee is that every split still parses, that no question
+      # violates the schema, and that all ten question types stay represented.
+      - name: Validate Golden Dataset Splits
+        run: make eval-validate-schema
+
+      # Task 4.6. Experiments run where the corpus and the provider keys live;
+      # their results are committed. CI compares the newest committed experiment
+      # against the committed baseline and fails on a regression beyond
+      # EVAL_REGRESSION_TOLERANCE. A commit that proposes no new experiment
+      # passes with a message rather than failing.
+      - name: Evaluation Regression Gate
+        run: make eval-gate
+
   docker-compose-validate:
     name: Validate Docker Compose Configuration
     runs-on: ubuntu-latest
