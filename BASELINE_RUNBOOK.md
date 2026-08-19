@@ -10,9 +10,16 @@ and the run costs more tokens than one day allows. The runner checkpoints after
 every question, so the job is: run until the quota stops you, come back
 tomorrow, run the same command again.
 
-> **Status when this was written:** the harness is complete and verified; the
-> baseline itself has **not** been produced. `evaluation/results/` is empty.
-> Everything below is what remains.
+> **Status (2026-08-19):** the baseline is **done and committed** —
+> `evaluation/results/experiment-001-baseline.json`, 100/100 questions,
+> `failure_rate` 0.010, evaluated in a single day. It needed one day of quota,
+> not the two or three estimated below: a full daily allowance goes further than
+> the partial one available when that estimate was made. The resume path is still
+> correct — the ceiling is real, it simply was not reached this time.
+>
+> **What remains:** the judged subset (§5c) and the gate demonstration (§5d).
+> The §5d run is already **39/100 banked** and resumes with the same command
+> once the daily quota resets.
 
 ---
 
@@ -196,12 +203,18 @@ CI. Needs about a third of a day's quota.
 
 ```bash
 # A deliberately crippled retrieval configuration.
+# Already 39/100 banked — re-running the identical command resumes.
 RETRIEVAL_TOP_K=1 python -m app.evaluation.cli run \
-  --name experiment-001x-topk1 --split dev --no-judge
+  --name experiment-001x-topk1 --split dev --no-judge --no-db
 
 make eval-gate RUN_A=experiment-001-baseline RUN_B=experiment-001x-topk1
 echo "exit: $?"      # MUST be 1
 ```
+
+The gate refuses a candidate of a different size, so this run must reach all
+100 questions before it can be compared. A partial 39-question record is not a
+regression, it is a different measurement, and the gate says so rather than
+raising a false alarm.
 
 Then **delete the degraded run** — do not commit it:
 
@@ -221,12 +234,14 @@ the newest against the baseline, so every later commit would go red.
 | Golden dataset, ten types, dev/validation/locked-test | done — 100 / 41 / 40, every pointer resolves |
 | Retrieval, generation (3 layers), system metrics compute | done — 426 tests green |
 | Experiment diff CLI works | done |
-| CI fails on evaluation regression | job written; **§5d still to demonstrate** |
-| `experiment-001-baseline` committed | **outstanding — this runbook** |
+| CI fails on evaluation regression | job written; everyday "nothing to gate" path verified (exit 0); **the failure case in §5d still to demonstrate** |
+| `experiment-001-baseline` committed | done — commit `d6f267d`, recall@5 0.354, failure_rate 0.010 |
 | Known-failing categories documented | done — `docs/STAGE_4_EVALUATION.md`, `evaluation/datasets/README.md` |
 
-Stage 5 should not start before the baseline is committed. Its whole purpose is
-to beat a number, and that number does not exist yet.
+Stage 5 may now start: the number it must beat exists. It is aimed at `recall@5`
+0.354, `mrr` 0.266, `context_precision` 0.257. Weak retrieval starves grounding,
+so the pipeline abstains on answerable questions (`answered_when_expected` 0.424)
+— that is the gap Stages 5 and 6 exist to close.
 
 ---
 
