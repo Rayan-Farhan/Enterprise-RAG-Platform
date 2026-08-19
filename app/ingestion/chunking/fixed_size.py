@@ -12,6 +12,7 @@ import re
 from app.db.models.element import Element
 from app.ingestion.chunking.base import (
     ChunkCandidate,
+    ChunkingContext,
     ChunkType,
     estimate_tokens,
     union_bounding_box,
@@ -65,8 +66,16 @@ class FixedSizeChunker:
         self.chunk_overlap_tokens = chunk_overlap_tokens
         self.chunking_version = chunking_version
 
-    def chunk(self, elements: list[Element]) -> list[ChunkCandidate]:
-        """Convert ordered canonical elements into fixed-size chunk candidates."""
+    def chunk(
+        self,
+        elements: list[Element],
+        context: ChunkingContext | None = None,
+    ) -> list[ChunkCandidate]:
+        """Convert ordered canonical elements into fixed-size chunk candidates.
+
+        ``context`` is accepted and ignored: the baseline deliberately embeds no
+        provenance, which is precisely what ``contextual`` is measured against.
+        """
         ordered = sorted(
             (el for el in elements if not el.is_boilerplate),
             key=lambda el: el.sequence_index,
@@ -211,9 +220,7 @@ class FixedSizeChunker:
             page_span=[element.page_number],
             token_count=estimate_tokens(content),
             chunk_type=ChunkType.TABLE,
-            bounding_box=union_bounding_box(
-                [element.bounding_box] if element.bounding_box else []
-            ),
+            bounding_box=union_bounding_box([element.bounding_box] if element.bounding_box else []),
         )
 
     @classmethod

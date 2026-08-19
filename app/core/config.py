@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -117,11 +117,17 @@ class AppSettings(BaseSettings):
     TEI_EMBED_BASE_URL: str = "http://localhost:8080"
     TEI_RERANK_BASE_URL: str = "http://localhost:8081"
 
-    # Chunking (Stage 3 baseline, ADR-006, ADR-036)
-    CHUNKING_STRATEGY: Literal["fixed"] = "fixed"
+    # Chunking (ADR-006, ADR-036; strategies from Task 5.1)
+    CHUNKING_STRATEGY: Literal["fixed", "structure_aware", "hierarchical", "contextual"] = (
+        "fixed"
+    )
     CHUNKING_VERSION: str = Field(
         default="fixed-v2",
-        description="Participates in deterministic chunk IDs; bump to force re-chunking (ADR-036)",
+        description=(
+            "Participates in deterministic chunk IDs; bump to force re-chunking "
+            "(ADR-036). Must start with the strategy name so two strategies can "
+            "never collide on a chunk identity."
+        ),
     )
     CHUNK_SIZE_TOKENS: int = 512
     CHUNK_OVERLAP_TOKENS: int = 64
@@ -229,6 +235,27 @@ class AppSettings(BaseSettings):
                 f"Invalid INFERENCE_PROFILE: {v}. Must be 'hosted', 'local', or 'stub'"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_chunking_version_matches_strategy(self) -> "AppSettings":
+        """Keep two strategies from ever sharing a chunk identity.
+
+        Chunk IDs are UUIDv5 over (version_id, element_ids, chunk_index,
+        chunking_version) — the strategy name is deliberately not an input, so
+        two strategies run under the same CHUNKING_VERSION would produce
+        colliding IDs for the same elements. The rows would overwrite each other
+        and Stage 5's comparison would silently measure a mixture of both.
+        Requiring the version string to name its strategy makes that
+        unrepresentable rather than merely discouraged.
+        """
+        if not self.CHUNKING_VERSION.startswith(self.CHUNKING_STRATEGY):
+            raise ValueError(
+                f"CHUNKING_VERSION must start with CHUNKING_STRATEGY so strategies cannot "
+                f"collide on chunk identity. Got strategy={self.CHUNKING_STRATEGY!r} "
+                f"version={self.CHUNKING_VERSION!r}; try "
+                f"{self.CHUNKING_STRATEGY}-v1."
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

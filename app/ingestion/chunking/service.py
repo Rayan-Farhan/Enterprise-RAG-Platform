@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,9 +14,14 @@ from app.core.config import AppSettings, get_settings
 from app.core.exceptions import NotFoundException
 from app.core.logging import get_logger
 from app.db.models.chunk import Chunk
+from app.db.models.document import Document
+from app.db.models.version import DocumentVersion
 from app.db.repositories.document_repo import DocumentRepository
-from app.ingestion.chunking.base import ChunkCandidate, ChunkingStrategy
+from app.ingestion.chunking.base import ChunkCandidate, ChunkingContext, ChunkingStrategy
+from app.ingestion.chunking.contextual import ContextualChunker
 from app.ingestion.chunking.fixed_size import FixedSizeChunker
+from app.ingestion.chunking.hierarchical import HierarchicalChunker
+from app.ingestion.chunking.structure_aware import StructureAwareChunker
 
 logger = get_logger("app.ingestion.chunking")
 
@@ -39,18 +46,30 @@ class ChunkingResult:
         return self.chunks_created == 0 and self.chunks_removed == 0
 
 
+#: Every strategy takes the same three construction arguments, so the experiment
+#: matrix in Task 5.3 can sweep size and overlap across all of them uniformly.
+STRATEGIES: dict[str, Callable[..., ChunkingStrategy]] = {
+    "fixed": FixedSizeChunker,
+    "structure_aware": StructureAwareChunker,
+    "hierarchical": HierarchicalChunker,
+    "contextual": ContextualChunker,
+}
+
+
 def build_strategy(settings: AppSettings | None = None) -> ChunkingStrategy:
     """Construct the configured chunking strategy.
 
-    Stage 3 locks this to ``fixed``; the config field is a ``Literal`` so an
-    unknown strategy fails at settings validation rather than here.
+    The config field is a ``Literal``, so an unknown name fails at settings
+    validation rather than here; the lookup below therefore cannot legitimately
+    miss, and a KeyError would mean the Literal and this table drifted apart.
     """
     cfg = settings or get_settings()
-    return FixedSizeChunker(
+    strategy: ChunkingStrategy = STRATEGIES[cfg.CHUNKING_STRATEGY](
         chunk_size_tokens=cfg.CHUNK_SIZE_TOKENS,
         chunk_overlap_tokens=cfg.CHUNK_OVERLAP_TOKENS,
         chunking_version=cfg.CHUNKING_VERSION,
     )
+    return strategy
 
 
 class ChunkingService:
@@ -86,7 +105,8 @@ class ChunkingService:
             strategy=self.strategy.strategy_name,
         )
 
-        candidates = self.strategy.chunk(elements)
+        document = await repo.get_by_id(version.document_id)
+        candidates = self.strategy.chunk(elements, self._context(document, version))
         chunking_version = self.strategy.chunking_version
 
         existing = await self._load_existing(session, version_id, chunking_version)
@@ -150,6 +170,29 @@ class ChunkingService:
             total=len(candidates),
         )
         return result
+
+    @staticmethod
+    def _context(document: Document | None, version: DocumentVersion) -> ChunkingContext:
+        """Assemble the document-level facts a strategy may prefix onto chunks.
+
+        Only fields the canonical model actually carries are included. A prefix
+        of "Effective Date: None" is noise in every embedding, so absent values
+        are omitted rather than stringified.
+        """
+        metadata: dict[str, Any] = {}
+        if version.effective_from is not None:
+            metadata["effective_date"] = version.effective_from.date().isoformat()
+        if version.authority:
+            metadata["policy_id"] = version.authority
+        if version.version_number:
+            metadata["version_label"] = f"v{version.version_number}"
+
+        return ChunkingContext(
+            document_title=(document.title if document else ""),
+            document_id=version.document_id,
+            version_id=version.id,
+            metadata=metadata,
+        )
 
     async def _load_existing(
         self,

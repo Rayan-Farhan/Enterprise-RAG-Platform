@@ -78,6 +78,23 @@ def compute_point_id(chunk_id: uuid.UUID, embedding_version: str) -> str:
     return str(uuid.uuid5(CHUNK_ID_NAMESPACE, f"{chunk_id}|{embedding_version}"))
 
 
+@dataclass(frozen=True)
+class ChunkingContext:
+    """Document-level facts a strategy may need beyond the elements themselves.
+
+    Only ``contextual`` uses this today — it prefixes every chunk with the
+    document title and section path so an embedding carries the document it came
+    from. It is passed to all strategies rather than to that one, because a
+    strategy that quietly needs a different call signature cannot be swapped by
+    configuration alone, which is the entire point of the interface.
+    """
+
+    document_title: str = ""
+    document_id: uuid.UUID | None = None
+    version_id: uuid.UUID | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class ChunkCandidate:
     """A chunk produced by a strategy, before persistence."""
@@ -91,6 +108,10 @@ class ChunkCandidate:
     token_count: int
     chunk_type: ChunkType = ChunkType.MIXED
     bounding_box: dict[str, Any] | None = field(default=None)
+    #: Index of this chunk's parent in the same candidate list. Set only by the
+    #: hierarchical strategy, where a leaf chunk points at the section chunk that
+    #: contains it. Task 5.2 persists these links for parent-child retrieval.
+    parent_index: int | None = None
 
     def identity(self, version_id: uuid.UUID, chunking_version: str) -> uuid.UUID:
         """Deterministic identity of this candidate under a given version."""
@@ -109,7 +130,11 @@ class ChunkingStrategy(Protocol):
     strategy_name: str
     chunking_version: str
 
-    def chunk(self, elements: list[Element]) -> list[ChunkCandidate]:
+    def chunk(
+        self,
+        elements: list[Element],
+        context: ChunkingContext | None = None,
+    ) -> list[ChunkCandidate]:
         """Convert ordered canonical elements into chunk candidates."""
         ...
 
