@@ -57,9 +57,7 @@ class QuotaExhausted(RuntimeError):
     """
 
     def __init__(self, completed: int, total: int, detail: str) -> None:
-        super().__init__(
-            f"Provider quota exhausted after {completed}/{total} questions: {detail}"
-        )
+        super().__init__(f"Provider quota exhausted after {completed}/{total} questions: {detail}")
         self.completed = completed
         self.total = total
         self.detail = detail
@@ -137,6 +135,7 @@ class ExperimentRunner:
         description: str = "",
         notes: str = "",
         judge_enabled: bool | None = None,
+        retrieval_only: bool = False,
         completed: Mapping[str, QuestionResult] | None = None,
         on_result: Callable[[QuestionResult], None] | None = None,
     ) -> ExperimentRun:
@@ -166,6 +165,7 @@ class ExperimentRunner:
             dataset_split=split,
             dataset_version=dataset_version,
             dataset_size=len(questions),
+            retrieval_only=retrieval_only,
             git_commit=current_git_commit(),
             config_snapshot=config_snapshot(self.settings),
             embedding_version=self.settings.effective_embedding_version,
@@ -173,6 +173,11 @@ class ExperimentRunner:
         )
 
         use_judge = self.settings.EVAL_JUDGE_ENABLED if judge_enabled is None else judge_enabled
+        if retrieval_only:
+            # Layer 1 needs an answer to score and Layer 2 needs a model to score
+            # it with. Neither exists here, so asking for the judge would be a
+            # silent no-op rather than an error.
+            use_judge = False
         system = SystemMetrics(total_questions=len(questions))
 
         recovered = dict(completed or {})
@@ -224,6 +229,7 @@ class ExperimentRunner:
                     run=run,
                     system=system,
                     use_judge=use_judge,
+                    retrieval_only=retrieval_only,
                 )
 
                 async with lock:
@@ -242,9 +248,7 @@ class ExperimentRunner:
                     if on_result is not None:
                         on_result(result)
 
-        await asyncio.gather(
-            *(worker() for _ in range(max(1, self.settings.EVAL_CONCURRENCY)))
-        )
+        await asyncio.gather(*(worker() for _ in range(max(1, self.settings.EVAL_CONCURRENCY))))
 
         if exhausted is not None:
             logger.warning(
@@ -300,6 +304,7 @@ class ExperimentRunner:
         run: ExperimentRun,
         system: SystemMetrics,
         use_judge: bool,
+        retrieval_only: bool = False,
     ) -> QuestionResult:
         result = QuestionResult(
             question_id=question.question_id,
@@ -312,6 +317,14 @@ class ExperimentRunner:
         started = time.perf_counter()
         try:
             async with session_factory() as session:  # type: ignore[operator]
+                if retrieval_only:
+                    return await self._evaluate_retrieval_only(
+                        question=question,
+                        session=session,
+                        result=result,
+                        system=system,
+                        started=started,
+                    )
                 answer = await self.generation.answer(query=question.question, session=session)
         except Exception as exc:  # noqa: BLE001 - a failed question is data, not a crash
             result.error = f"{type(exc).__name__}: {exc}"
@@ -359,6 +372,70 @@ class ExperimentRunner:
             run.prompt_versions.update(answer.prompt_versions)
             run.prompt_hashes.update(answer.prompt_hashes)
 
+        return result
+
+    async def _evaluate_retrieval_only(
+        self,
+        question: GoldenQuestion,
+        session: AsyncSession,
+        result: QuestionResult,
+        system: SystemMetrics,
+        started: float,
+    ) -> QuestionResult:
+        """Score Layer 0 without generating an answer.
+
+        Task 5.3 sweeps four chunking strategies across a parameter grid, and its
+        exit gate is a *retrieval* comparison. Generating an answer for every
+        question of every configuration would cost a day of free-tier quota per
+        cell to produce numbers the comparison does not read.
+
+        Context assembly still runs. It makes no model call, and skipping it
+        would leave ``context_precision`` and ``context_recall`` measuring the
+        raw candidate list rather than what would actually reach a prompt — a
+        different quantity, silently named the same thing.
+        """
+        retrieval = await self.generation.retriever.retrieve(
+            query=question.question,
+            session=session,
+        )
+        expansion = await self.generation.expander.expand(retrieval.chunks, session=session)
+        context = self.generation.assembler.assemble(
+            query=question.question, chunks=expansion.chunks
+        )
+
+        context_ids = {c.chunk_id for c in context.included_chunks}
+        result.retrieved_chunk_ids = [c.chunk_id for c in expansion.chunks]
+        result.retrieved_element_ids = sorted(
+            {eid for chunk in expansion.chunks for eid in chunk.element_ids}
+        )
+        result.context_element_ids = sorted(
+            {
+                eid
+                for chunk in expansion.chunks
+                if chunk.chunk_id in context_ids
+                for eid in chunk.element_ids
+            }
+        )
+        result.latency_ms = (time.perf_counter() - started) * 1000
+        result.retrieval_latency_ms = retrieval.latency_ms
+        result.evidence_tokens = context.evidence_tokens
+
+        result.retrieval_metrics = retrieval_metrics.compute_case_metrics(
+            retrieval_metrics.RetrievalCase(
+                question_id=question.question_id,
+                retrieved_element_sets=[frozenset(chunk.element_ids) for chunk in expansion.chunks],
+                relevant_element_ids=frozenset(question.expected_element_ids()),
+                context_element_ids=frozenset(result.context_element_ids),
+            )
+        )
+
+        system.record(
+            total_ms=result.latency_ms,
+            retrieval_ms=retrieval.latency_ms,
+            generation_ms=0.0,
+            token_counts={},
+            evidence_tokens=context.evidence_tokens,
+        )
         return result
 
     @staticmethod

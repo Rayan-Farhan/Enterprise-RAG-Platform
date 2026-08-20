@@ -105,6 +105,15 @@ class ExperimentRun(BaseModel):
     dataset_version: str
     dataset_size: int = 0
 
+    retrieval_only: bool = Field(
+        default=False,
+        description=(
+            "Layer 0 only: retrieval ran, generation did not. Recorded because such a "
+            "run carries no Layer 1 or Layer 2 metrics, and comparing it to a full run "
+            "would read every absent metric as a regression"
+        ),
+    )
+
     # Reproducibility snapshot — read back verbatim by `make eval-diff`.
     git_commit: str | None = None
     config_snapshot: dict[str, Any] = Field(default_factory=dict)

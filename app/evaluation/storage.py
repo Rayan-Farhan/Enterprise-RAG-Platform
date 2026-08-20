@@ -155,6 +155,7 @@ def is_comparable(run: ExperimentRun, reference: ExperimentRun) -> bool:
         run.dataset_split == reference.dataset_split
         and run.dataset_version == reference.dataset_version
         and run.dataset_size == reference.dataset_size
+        and run.retrieval_only == reference.retrieval_only
     )
 
 

@@ -145,6 +145,7 @@ async def cmd_run(args: argparse.Namespace) -> int:
             description=args.description,
             notes=args.notes,
             judge_enabled=None if args.judge else False,
+            retrieval_only=args.retrieval_only,
             completed=completed,
             on_result=lambda result: storage.append_checkpoint(args.name, result),
         )
@@ -377,6 +378,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="evaluate only the first N questions of each question type (a comparable subset)",
     )
     run_parser.add_argument("--no-judge", dest="judge", action="store_false", help="skip Layer 2")
+    run_parser.add_argument(
+        "--retrieval-only",
+        action="store_true",
+        help=(
+            "score Layer 0 only: retrieve and assemble context but never generate. "
+            "Costs no generation quota, which is what makes a strategy sweep affordable"
+        ),
+    )
     run_parser.add_argument(
         "--no-db", action="store_true", help="write the file but skip PostgreSQL"
     )
