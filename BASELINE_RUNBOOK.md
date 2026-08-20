@@ -10,16 +10,14 @@ and the run costs more tokens than one day allows. The runner checkpoints after
 every question, so the job is: run until the quota stops you, come back
 tomorrow, run the same command again.
 
-> **Status (2026-08-19):** the baseline is **done and committed** —
+> **Status (2026-08-20):** the baseline is **done and committed** —
 > `evaluation/results/experiment-001-baseline.json`, 100/100 questions,
-> `failure_rate` 0.010, evaluated in a single day. It needed one day of quota,
-> not the two or three estimated below: a full daily allowance goes further than
-> the partial one available when that estimate was made. The resume path is still
-> correct — the ceiling is real, it simply was not reached this time.
+> `failure_rate` 0.010. The gate demonstration (§5d) is **done**: a top-K=1
+> run over the same split failed the gate with exit 1 on five metrics. That run
+> spanned two days of quota and resumed from its checkpoint exactly as designed,
+> which also served as the first real-data exercise of the resume path.
 >
-> **What remains:** the judged subset (§5c) and the gate demonstration (§5d).
-> The §5d run is already **39/100 banked** and resumes with the same command
-> once the daily quota resets.
+> **What remains:** only the judged subset (§5c), for Layer 2 reference numbers.
 
 ---
 
@@ -211,6 +209,21 @@ make eval-gate RUN_A=experiment-001-baseline RUN_B=experiment-001x-topk1
 echo "exit: $?"      # MUST be 1
 ```
 
+**Measured on 2026-08-20** (`RETRIEVAL_TOP_K=1`, same 100 dev questions):
+
+```
+Regression gate FAILED (tolerance 0.050).
+  recall@5:            0.3537 -> 0.1707  (-0.1829)
+  mrr:                 0.2662 -> 0.1951  (-0.0711)
+  context_precision:   0.2571 -> 0.1951  (-0.0620)
+  abstention_correct:  0.3838 -> 0.2400  (-0.1438)
+  document_match:      0.4343 -> 0.2900  (-0.1443)
+exit 1
+```
+
+After deleting that record the gate returns to exit 0 with "nothing to gate",
+which is the path every ordinary commit takes.
+
 The gate refuses a candidate of a different size, so this run must reach all
 100 questions before it can be compared. A partial 39-question record is not a
 regression, it is a different measurement, and the gate says so rather than
@@ -234,7 +247,7 @@ the newest against the baseline, so every later commit would go red.
 | Golden dataset, ten types, dev/validation/locked-test | done — 100 / 41 / 40, every pointer resolves |
 | Retrieval, generation (3 layers), system metrics compute | done — 426 tests green |
 | Experiment diff CLI works | done |
-| CI fails on evaluation regression | job written; everyday "nothing to gate" path verified (exit 0); **the failure case in §5d still to demonstrate** |
+| CI fails on evaluation regression | **done** — top-K=1 candidate fails with exit 1; "nothing to gate" path exits 0 |
 | `experiment-001-baseline` committed | done — commit `d6f267d`, recall@5 0.354, failure_rate 0.010 |
 | Known-failing categories documented | done — `docs/STAGE_4_EVALUATION.md`, `evaluation/datasets/README.md` |
 
