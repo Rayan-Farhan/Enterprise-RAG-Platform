@@ -25,6 +25,7 @@ from app.ingestion.chunking.base import (
 from app.ingestion.chunking.contextual import ContextualChunker
 from app.ingestion.chunking.fixed_size import FixedSizeChunker
 from app.ingestion.chunking.hierarchical import HierarchicalChunker
+from app.ingestion.chunking.hierarchical_contextual import HierarchicalContextualChunker
 from app.ingestion.chunking.segmentation import segment
 from app.ingestion.chunking.service import STRATEGIES, build_strategy
 from app.ingestion.chunking.structure_aware import StructureAwareChunker
@@ -36,6 +37,7 @@ ALL_STRATEGIES = (
     StructureAwareChunker,
     HierarchicalChunker,
     ContextualChunker,
+    HierarchicalContextualChunker,
 )
 
 
@@ -132,7 +134,10 @@ class TestInterfaceConformance:
         )
         assert set(STRATEGIES) == configurable
 
-    @pytest.mark.parametrize("name", ["fixed", "structure_aware", "hierarchical", "contextual"])
+    @pytest.mark.parametrize(
+        "name",
+        ["fixed", "structure_aware", "hierarchical", "contextual", "hierarchical_contextual"],
+    )
     def test_build_strategy_constructs_the_configured_one(self, name: str) -> None:
         settings = AppSettings(CHUNKING_STRATEGY=name, CHUNKING_VERSION=f"{name}-v1")
 
@@ -401,6 +406,65 @@ class TestContextual:
         assert [c.element_ids for c in plain] == [c.element_ids for c in prefixed]
 
 
+class TestHierarchicalContextual:
+    """The combined strategy: hierarchy and provenance are orthogonal (Task 5.3)."""
+
+    def test_it_keeps_the_hierarchy(self) -> None:
+        chunks = build(HierarchicalContextualChunker).chunk(
+            handbook(), ChunkingContext(document_title="Staff Handbook")
+        )
+
+        sections = [c for c in chunks if c.chunk_type is ChunkType.SECTION]
+        leaves = [c for c in chunks if c.parent_index is not None]
+
+        assert sections
+        assert leaves
+        for leaf in leaves:
+            assert chunks[leaf.parent_index].chunk_type is ChunkType.SECTION  # type: ignore[index]
+
+    def test_it_prefixes_every_chunk_including_sections(self) -> None:
+        # Section chunks are what parent expansion hands the generator, so an
+        # unprefixed section would lose provenance exactly where it matters most.
+        chunks = build(HierarchicalContextualChunker).chunk(
+            handbook(), ChunkingContext(document_title="Staff Handbook")
+        )
+
+        prefixed = [c for c in chunks if c.content.startswith("Document: Staff Handbook")]
+        assert len(prefixed) == len(chunks)
+
+    def test_the_prefix_is_reserved_from_both_budgets(self) -> None:
+        body = " ".join(f"Sentence number {i} of the leave policy." for i in range(200))
+        elements = [
+            element("h1", "Paid and Unpaid Time Off Work", "heading", 0, 1, heading_level=1),
+            element("p1", body, "paragraph", 1, 1),
+        ]
+        context = ChunkingContext(document_title="University Employee Policy Manual")
+
+        chunker = HierarchicalContextualChunker(chunk_size_tokens=128, chunk_overlap_tokens=8)
+        chunks = chunker.chunk(elements, context)
+        leaves = [c for c in chunks if c.chunk_type is not ChunkType.SECTION]
+
+        assert leaves
+        for leaf in leaves:
+            assert leaf.token_count <= 128
+
+    def test_it_is_distinguishable_from_both_parents(self) -> None:
+        # Same corpus, three strategies: identity must not collide, or Stage 5's
+        # comparison silently measures a mixture.
+        ctx = ChunkingContext(document_title="Staff Handbook")
+        combined = build(HierarchicalContextualChunker).chunk(handbook(), ctx)
+        hierarchical = build(HierarchicalChunker).chunk(handbook(), ctx)
+        contextual = build(ContextualChunker).chunk(handbook(), ctx)
+
+        ids = {
+            "combined": {c.identity(VERSION_ID, "hierarchical_contextual-v1") for c in combined},
+            "hierarchical": {c.identity(VERSION_ID, "hierarchical-v1") for c in hierarchical},
+            "contextual": {c.identity(VERSION_ID, "contextual-v1") for c in contextual},
+        }
+        assert not (ids["combined"] & ids["hierarchical"])
+        assert not (ids["combined"] & ids["contextual"])
+
+
 class TestStrategyIsolation:
     def test_two_strategies_cannot_share_a_chunking_version(self) -> None:
         # Chunk IDs do not include the strategy name, so a shared version string
@@ -408,6 +472,14 @@ class TestStrategyIsolation:
         # comparison measure a mixture of both.
         with pytest.raises(ValueError, match="CHUNKING_VERSION must start with"):
             AppSettings(CHUNKING_STRATEGY="hierarchical", CHUNKING_VERSION="fixed-v2")
+
+    def test_a_strategy_name_that_prefixes_another_cannot_borrow_its_version(self) -> None:
+        # "hierarchical_contextual-s256-o32" also starts with "hierarchical".
+        with pytest.raises(ValueError, match="CHUNKING_VERSION must start with"):
+            AppSettings(
+                CHUNKING_STRATEGY="hierarchical",
+                CHUNKING_VERSION="hierarchical_contextual-s256-o32",
+            )
 
     def test_the_same_elements_under_two_strategies_get_different_ids(self) -> None:
         structure = build(StructureAwareChunker).chunk(handbook())

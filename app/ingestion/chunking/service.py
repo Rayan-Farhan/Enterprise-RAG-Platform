@@ -21,6 +21,7 @@ from app.ingestion.chunking.base import ChunkCandidate, ChunkingContext, Chunkin
 from app.ingestion.chunking.contextual import ContextualChunker
 from app.ingestion.chunking.fixed_size import FixedSizeChunker
 from app.ingestion.chunking.hierarchical import HierarchicalChunker
+from app.ingestion.chunking.hierarchical_contextual import HierarchicalContextualChunker
 from app.ingestion.chunking.structure_aware import StructureAwareChunker
 
 logger = get_logger("app.ingestion.chunking")
@@ -53,6 +54,7 @@ STRATEGIES: dict[str, Callable[..., ChunkingStrategy]] = {
     "structure_aware": StructureAwareChunker,
     "hierarchical": HierarchicalChunker,
     "contextual": ContextualChunker,
+    "hierarchical_contextual": HierarchicalContextualChunker,
 }
 
 

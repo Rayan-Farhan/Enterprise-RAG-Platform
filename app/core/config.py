@@ -118,9 +118,13 @@ class AppSettings(BaseSettings):
     TEI_RERANK_BASE_URL: str = "http://localhost:8081"
 
     # Chunking (ADR-006, ADR-036; strategies from Task 5.1)
-    CHUNKING_STRATEGY: Literal["fixed", "structure_aware", "hierarchical", "contextual"] = (
-        "fixed"
-    )
+    CHUNKING_STRATEGY: Literal[
+        "fixed",
+        "structure_aware",
+        "hierarchical",
+        "contextual",
+        "hierarchical_contextual",
+    ] = "fixed"
     CHUNKING_VERSION: str = Field(
         default="fixed-v2",
         description=(
@@ -266,7 +270,10 @@ class AppSettings(BaseSettings):
         Requiring the version string to name its strategy makes that
         unrepresentable rather than merely discouraged.
         """
-        if not self.CHUNKING_VERSION.startswith(self.CHUNKING_STRATEGY):
+        # The trailing hyphen matters: "hierarchical_contextual-s256-o32" also
+        # starts with "hierarchical", so a bare prefix test would let those two
+        # strategies share a version string and collide on chunk identity.
+        if not self.CHUNKING_VERSION.startswith(f"{self.CHUNKING_STRATEGY}-"):
             raise ValueError(
                 f"CHUNKING_VERSION must start with CHUNKING_STRATEGY so strategies cannot "
                 f"collide on chunk identity. Got strategy={self.CHUNKING_STRATEGY!r} "
