@@ -203,6 +203,24 @@ class AppSettings(BaseSettings):
         description="How far a gated metric may fall below the baseline before CI fails",
     )
 
+    # Parent-child retrieval (Stage 5, Task 5.2, master §19)
+    ENABLE_PARENT_EXPANSION: bool = Field(
+        default=False,
+        description=(
+            "Replace retrieved leaf chunks with their parent section for generation. "
+            "Off by default so experiment-001-baseline stays reproducible; Task 5.3 "
+            "turns it on as a measured comparison, not a default"
+        ),
+    )
+    PARENT_EXPANSION_BUDGET_TOKENS: int = Field(
+        default=6000,
+        gt=0,
+        description=(
+            "Token ceiling for expanded context. A section is several times a leaf, "
+            "so unbudgeted expansion of eight hits can exceed the generation window"
+        ),
+    )
+
     # Feature Flags (Master Plan §2)
     ENABLE_RERANKING: bool = False
     ENABLE_VISUAL_RETRIEVAL: bool = False

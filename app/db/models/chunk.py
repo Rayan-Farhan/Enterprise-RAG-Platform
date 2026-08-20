@@ -129,6 +129,18 @@ class Chunk(Base, TimestampMixin):
         doc="Embedding model version that produced the indexed vector",
     )
 
+    parent_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("chunks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        doc=(
+            "Section chunk this leaf belongs to (Task 5.2). Only the hierarchical "
+            "strategy sets it; SET NULL on delete so removing a parent orphans the "
+            "leaf rather than cascading away evidence the dataset may point at."
+        ),
+    )
+
     # Relationships
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
     version: Mapped["DocumentVersion"] = relationship("DocumentVersion", back_populates="chunks")

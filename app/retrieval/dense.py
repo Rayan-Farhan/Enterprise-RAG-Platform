@@ -192,6 +192,13 @@ class DenseRetriever:
                     if version is not None and version.effective_from is not None
                     else None
                 ),
+                # Task 5.2 reads this to expand a matched leaf into its section.
+                # Carried as metadata rather than a typed field so the retrieval
+                # contract does not assume a hierarchy that only one chunking
+                # strategy produces.
+                "parent_chunk_id": (
+                    str(chunk.parent_chunk_id) if chunk.parent_chunk_id else None
+                ),
             },
         )
 
@@ -219,6 +226,7 @@ class DenseRetriever:
                 "department": payload.get("department"),
                 "policy_type": payload.get("policy_type"),
                 "policy_status": payload.get("policy_status"),
+                "parent_chunk_id": payload.get("parent_chunk_id"),
             },
         )
 

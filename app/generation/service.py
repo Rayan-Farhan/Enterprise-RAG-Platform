@@ -20,6 +20,7 @@ from app.generation.citation import (
 from app.generation.context import AssembledContext, ContextAssembler, get_context_assembler
 from app.models.gateway import ModelGateway, get_model_gateway
 from app.retrieval.dense import DenseRetriever, get_dense_retriever
+from app.retrieval.expansion import ParentExpander, get_parent_expander
 from app.retrieval.schemas import Citation, RetrievalFilters, RetrievedChunk
 
 logger = get_logger("app.generation.service")
@@ -75,6 +76,7 @@ class GenerationService:
         assembler: ContextAssembler | None = None,
         validator: CitationValidator | None = None,
         gateway: ModelGateway | None = None,
+        expander: ParentExpander | None = None,
         settings: AppSettings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
@@ -82,6 +84,7 @@ class GenerationService:
         self.assembler = assembler or get_context_assembler()
         self.validator = validator or get_citation_validator()
         self.gateway = gateway or get_model_gateway()
+        self.expander = expander or get_parent_expander()
 
     async def answer(
         self,
@@ -113,7 +116,12 @@ class GenerationService:
                 started=started,
             )
 
-        context = self.assembler.assemble(query=query, chunks=retrieval.chunks)
+        # Parent-child expansion sits between retrieval and assembly (Task 5.2):
+        # retrieval matched small leaves for precision, generation reads whole
+        # sections for coherence. A no-op unless ENABLE_PARENT_EXPANSION is on
+        # and the corpus was chunked by a strategy that emits a hierarchy.
+        expansion = await self.expander.expand(retrieval.chunks, session=session)
+        context = self.assembler.assemble(query=query, chunks=expansion.chunks)
 
         gen_started = time.perf_counter()
         generation = await self.gateway.generate(

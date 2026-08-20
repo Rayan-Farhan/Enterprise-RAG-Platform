@@ -114,8 +114,21 @@ class ChunkingService:
         created = 0
         updated = 0
 
-        for candidate in candidates:
-            chunk_id = candidate.identity(version_id, chunking_version)
+        # Candidate positions are resolved to chunk IDs up front: a leaf carries
+        # its parent's *index*, and the parent's identity is only knowable once
+        # every candidate has been assigned one.
+        ids_by_index = {
+            index: candidate.identity(version_id, chunking_version)
+            for index, candidate in enumerate(candidates)
+        }
+
+        for index, candidate in enumerate(candidates):
+            chunk_id = ids_by_index[index]
+            parent_chunk_id = (
+                ids_by_index.get(candidate.parent_index)
+                if candidate.parent_index is not None
+                else None
+            )
             desired_ids.add(chunk_id)
 
             current = existing.get(chunk_id)
@@ -127,6 +140,7 @@ class ChunkingService:
                         version_id=version_id,
                         chunking_version=chunking_version,
                         candidate=candidate,
+                        parent_chunk_id=parent_chunk_id,
                     )
                 )
                 created += 1
@@ -137,6 +151,7 @@ class ChunkingService:
                 current.content = candidate.content
                 current.token_count = candidate.token_count
                 current.section_path = candidate.section_path
+                current.parent_chunk_id = parent_chunk_id
                 current.embedding_id = None
                 current.embedding_version = None
                 updated += 1
@@ -214,6 +229,7 @@ class ChunkingService:
         version_id: uuid.UUID,
         chunking_version: str,
         candidate: ChunkCandidate,
+        parent_chunk_id: uuid.UUID | None = None,
     ) -> Chunk:
         return Chunk(
             id=chunk_id,
@@ -229,6 +245,7 @@ class ChunkingService:
             primary_page_number=candidate.primary_page_number,
             page_span=candidate.page_span,
             bounding_box=candidate.bounding_box,
+            parent_chunk_id=parent_chunk_id,
         )
 
 
