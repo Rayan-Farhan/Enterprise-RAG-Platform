@@ -26,6 +26,10 @@ def settings() -> AppSettings:
         APP_ENV="testing",
         CHUNK_SIZE_TOKENS=80,
         CHUNK_OVERLAP_TOKENS=16,
+        # Stage 3's pipeline is what these tests exercise, so the strategy is
+        # pinned rather than inherited. Stage 5 moved the default to contextual;
+        # inheriting it would silently change what this suite tests.
+        CHUNKING_STRATEGY="fixed",
         CHUNKING_VERSION="fixed-v1",
         EMBEDDING_VERSION="test-embed-v1",
         EMBEDDING_DIMENSIONS=4,

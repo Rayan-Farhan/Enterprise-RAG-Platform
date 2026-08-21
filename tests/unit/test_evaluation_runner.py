@@ -136,9 +136,17 @@ def good_answer() -> AnswerResult:
 
 class TestConfigSnapshot:
     def test_captures_what_can_move_a_metric_and_no_credentials(self) -> None:
-        snapshot = config_snapshot(settings(GEMINI_API_KEY="secret-key"))
-        assert snapshot["retrieval_min_score"] == 0.35
-        assert snapshot["chunking_version"] == "fixed-v2"
+        # Asserted against the settings rather than a literal: the locked
+        # chunking version changes when an experiment says so (Task 5.3 moved it
+        # from fixed-v2 to contextual-s256-o32), and a test pinned to today's
+        # default fails on the next legitimate lock without finding a defect.
+        configured = settings(GEMINI_API_KEY="secret-key")
+        snapshot = config_snapshot(configured)
+
+        assert snapshot["retrieval_min_score"] == configured.RETRIEVAL_MIN_SCORE
+        assert snapshot["chunking_version"] == configured.CHUNKING_VERSION
+        assert snapshot["chunking_strategy"] == configured.CHUNKING_STRATEGY
+        assert snapshot["chunk_size_tokens"] == configured.CHUNK_SIZE_TOKENS
         assert "secret-key" not in str(snapshot)
 
 

@@ -124,17 +124,22 @@ class AppSettings(BaseSettings):
         "hierarchical",
         "contextual",
         "hierarchical_contextual",
-    ] = "fixed"
+    ] = "contextual"
     CHUNKING_VERSION: str = Field(
-        default="fixed-v2",
+        default="contextual-s256-o32",
         description=(
             "Participates in deterministic chunk IDs; bump to force re-chunking "
             "(ADR-036). Must start with the strategy name so two strategies can "
             "never collide on a chunk identity."
         ),
     )
-    CHUNK_SIZE_TOKENS: int = 512
-    CHUNK_OVERLAP_TOKENS: int = 64
+    # Locked by the Stage 5 sweep (Task 5.3, ADR-006), not by preference:
+    # contextual at 256/32 beat the fixed baseline by +0.134 recall@5
+    # (95% CI [+0.031, +0.232]) and passed the regression gate on Layer 1.
+    # Sizes from 128 to 512 did not separate at 100 questions; 256 was chosen on
+    # the best point estimate and the lowest evidence-token cost per query.
+    CHUNK_SIZE_TOKENS: int = 256
+    CHUNK_OVERLAP_TOKENS: int = 32
 
     # Embedding & Indexing (Stage 3, ADR-009, ADR-036)
     EMBEDDING_VERSION: str = Field(
