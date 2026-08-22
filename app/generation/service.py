@@ -46,6 +46,13 @@ class AnswerResult:
     # chunk IDs would make evidence dropped by the token budget look identical to
     # evidence never retrieved.
     retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
+    # What generation actually read, after Task 5.2's parent expansion may have
+    # replaced leaves with their sections. Kept separate from `retrieved_chunks`
+    # because the two answer different questions: Layer 0 scores what the
+    # retriever ranked, context metrics score what reached the prompt. Sharing
+    # one list silently made context_element_ids empty whenever expansion fired,
+    # since a parent's ID never appears among the retrieved leaves.
+    context_chunks: list[RetrievedChunk] = field(default_factory=list)
     context_chunk_ids: list[uuid.UUID] = field(default_factory=list)
     fabricated_markers: list[str] = field(default_factory=list)
     rejected: bool = False
@@ -143,6 +150,7 @@ class GenerationService:
             abstained=validated.support is SupportState.INSUFFICIENT,
             retrieved_chunk_ids=[c.chunk_id for c in retrieval.chunks],
             retrieved_chunks=list(retrieval.chunks),
+            context_chunks=list(expansion.chunks),
             context_chunk_ids=[c.chunk_id for c in context.included_chunks],
             fabricated_markers=validated.fabricated_markers,
             rejected=validated.rejected,

@@ -449,11 +449,14 @@ class ExperimentRunner:
         result.retrieved_element_ids = sorted(
             {eid for chunk in answer.retrieved_chunks for eid in chunk.element_ids}
         )
+        # Drawn from context_chunks, not retrieved_chunks: after parent expansion
+        # the chunks that reached the prompt are not the ones retrieval ranked.
         context_ids = set(answer.context_chunk_ids)
+        context_source = answer.context_chunks or answer.retrieved_chunks
         result.context_element_ids = sorted(
             {
                 eid
-                for chunk in answer.retrieved_chunks
+                for chunk in context_source
                 if chunk.chunk_id in context_ids
                 for eid in chunk.element_ids
             }
@@ -472,15 +475,18 @@ class ExperimentRunner:
         answer: AnswerResult,
     ) -> retrieval_metrics.RetrievalCase:
         context_ids = set(answer.context_chunk_ids)
+        context_source = answer.context_chunks or answer.retrieved_chunks
         return retrieval_metrics.RetrievalCase(
             question_id=question.question_id,
+            # Layer 0 scores what the retriever ranked, so this stays on the
+            # pre-expansion hits even when generation read the parents.
             retrieved_element_sets=[
                 frozenset(chunk.element_ids) for chunk in answer.retrieved_chunks
             ],
             relevant_element_ids=frozenset(question.expected_element_ids()),
             context_element_ids=frozenset(
                 eid
-                for chunk in answer.retrieved_chunks
+                for chunk in context_source
                 if chunk.chunk_id in context_ids
                 for eid in chunk.element_ids
             ),

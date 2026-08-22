@@ -15,6 +15,8 @@ import pytest
 
 from app.core.config import AppSettings
 from app.db.models.chunk import Chunk
+from app.evaluation.results import QuestionResult
+from app.evaluation.schemas import Difficulty, QuestionType
 from app.retrieval.expansion import ParentExpander
 from app.retrieval.schemas import RetrievedChunk
 
@@ -261,3 +263,58 @@ class TestNonHierarchicalCorpus:
 
         assert result.chunks == []
         assert result.was_noop
+
+
+class TestExpansionInstrumentation:
+    """Regression: expansion must not blank out the context metrics (Task 5.2).
+
+    The first parent-expansion measurement reported context_recall collapsing
+    0.500 -> 0.079 while every retrieval metric improved. That was not a quality
+    effect. `AnswerResult.retrieved_chunks` held the pre-expansion leaves while
+    `context_chunk_ids` held post-expansion parent IDs, so intersecting them
+    matched nothing and the run measured the instrumentation instead.
+    """
+
+    def test_answer_result_separates_retrieved_from_context_chunks(self) -> None:
+        from app.generation.service import AnswerResult
+
+        assert "context_chunks" in AnswerResult.__dataclass_fields__
+        assert "retrieved_chunks" in AnswerResult.__dataclass_fields__
+
+    def test_context_elements_come_from_the_chunks_generation_read(self) -> None:
+        from app.evaluation.runner import ExperimentRunner
+        from app.generation.citation import SupportState
+        from app.generation.service import AnswerResult
+
+        parent_id = uuid.uuid4()
+        child = leaf(parent_id, chunk_id=uuid.uuid4())
+        parent = RetrievedChunk(
+            chunk_id=parent_id,
+            document_id=DOCUMENT_ID,
+            version_id=VERSION_ID,
+            content="whole section",
+            score=child.score,
+            rank=child.rank,
+            token_count=400,
+            element_ids=["e1", "e2", "e3"],
+        )
+
+        answer = AnswerResult(
+            query="q",
+            answer="a",
+            support=SupportState.GROUNDED,
+            retrieved_chunks=[child],       # what retrieval ranked
+            context_chunks=[parent],        # what generation actually read
+            context_chunk_ids=[parent_id],
+        )
+
+        result = QuestionResult(
+            question_id="dev-factual-001",
+            question="q",
+            question_type=QuestionType.FACTUAL,
+            difficulty=Difficulty.EASY,
+        )
+        ExperimentRunner._record_answer(result, answer)
+
+        # Without the fix this is empty: the parent's ID is not among the leaves.
+        assert result.context_element_ids == ["e1", "e2", "e3"]
