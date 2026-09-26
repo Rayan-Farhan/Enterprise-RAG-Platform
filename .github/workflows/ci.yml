@@ -58,8 +58,14 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    # BM25 (Task 6.1) is only testable against real OpenSearch analyzers.
+    # BM25 (Task 6.1) is only testable against real OpenSearch analyzers, and
+    # late interaction (Task 6.6) against Qdrant's MAX_SIM multivector scoring.
     services:
+      qdrant:
+        image: qdrant/qdrant:v1.19.0
+        ports:
+          - 6333:6333
+          - 6334:6334
       opensearch:
         image: opensearchproject/opensearch:2.14.0
         env:
