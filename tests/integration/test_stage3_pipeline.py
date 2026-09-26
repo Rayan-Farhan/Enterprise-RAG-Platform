@@ -604,6 +604,9 @@ class TestEndToEndAnswer:
         assert result.citations == []
         assert "free housing" not in result.answer
         assert "answer_rejected_citation_validation" in result.degradations
+        # The draft is kept for diagnosis even though the user never sees it.
+        assert "free housing" in result.raw_answer
+        assert result.declared_support is SupportState.GROUNDED
 
     async def test_evidence_is_untrusted_in_the_prompt_sent_to_the_model(
         self, session: AsyncSession, service: GenerationService, gateway: HashEmbeddingGateway

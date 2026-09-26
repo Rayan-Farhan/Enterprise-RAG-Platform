@@ -445,6 +445,11 @@ class ExperimentRunner:
         result.abstained = answer.abstained
         result.rejected = answer.rejected
         result.support = str(answer.support)
+        result.rejection_reason = answer.rejection_reason
+        result.declared_support = str(answer.declared_support) if answer.declared_support else None
+        result.raw_answer = answer.raw_answer
+        result.generator_provider = answer.provider
+        result.generator_model = answer.model_name
         result.retrieved_chunk_ids = list(answer.retrieved_chunk_ids)
         result.retrieved_element_ids = sorted(
             {eid for chunk in answer.retrieved_chunks for eid in chunk.element_ids}

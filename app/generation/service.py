@@ -57,6 +57,12 @@ class AnswerResult:
     fabricated_markers: list[str] = field(default_factory=list)
     rejected: bool = False
     rejection_reason: str | None = None
+    # The model's text before validation, and the SUPPORT state it declared.
+    # Never shown to users — a rejected draft is exactly what must not reach
+    # them — but without it a rejection cannot be told apart from a refusal
+    # when diagnosing an experiment.
+    raw_answer: str = ""
+    declared_support: SupportState | None = None
 
     # Reproducibility metadata
     provider: str | None = None
@@ -155,6 +161,8 @@ class GenerationService:
             fabricated_markers=validated.fabricated_markers,
             rejected=validated.rejected,
             rejection_reason=validated.rejection_reason,
+            raw_answer=generation.text,
+            declared_support=validated.declared_support,
             provider=generation.metadata.provider,
             model_name=generation.metadata.model_name,
             model_version=generation.metadata.model_version,

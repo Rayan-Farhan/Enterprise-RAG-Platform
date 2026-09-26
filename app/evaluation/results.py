@@ -35,6 +35,19 @@ class QuestionResult(BaseModel):
     abstained: bool = False
     rejected: bool = False
     support: str | None = None
+    rejection_reason: str | None = None
+    declared_support: str | None = Field(
+        default=None, description="The SUPPORT line the model emitted, before validation"
+    )
+    raw_answer: str = Field(
+        default="",
+        description="Generator output before citation validation; differs from `answer` when rejected",
+    )
+    generator_provider: str | None = Field(
+        default=None,
+        description="Provider that actually answered; differs from the run's when Gemini fell back",
+    )
+    generator_model: str | None = None
 
     retrieved_chunk_ids: list[uuid.UUID] = Field(default_factory=list)
     retrieved_element_ids: list[str] = Field(default_factory=list)
@@ -149,6 +162,25 @@ class ExperimentRun(BaseModel):
     @property
     def spans_multiple_days(self) -> bool:
         return len(self.evaluation_days) > 1
+
+    @property
+    def generator_mix(self) -> dict[str, int]:
+        """How many questions each ``provider/model`` answered.
+
+        The run-level ``generator_*`` fields record the first answer only. Under
+        the hosted profile Gemini's daily cap sends most of a full split to the
+        Groq fallback, so those fields alone describe a minority of the run.
+        """
+        mix: dict[str, int] = {}
+        for result in self.results:
+            if result.generator_model:
+                key = f"{result.generator_provider}/{result.generator_model}"
+                mix[key] = mix.get(key, 0) + 1
+        return dict(sorted(mix.items()))
+
+    @property
+    def mixes_generators(self) -> bool:
+        return len(self.generator_mix) > 1
 
     @property
     def duration_seconds(self) -> float:
