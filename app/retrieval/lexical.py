@@ -11,6 +11,7 @@ relevance cut is its rank: it returns the top K.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 
@@ -58,7 +59,10 @@ class LexicalRetriever:
         started = time.perf_counter()
         k = top_k or self.settings.RETRIEVAL_TOP_K
 
-        hits = self.lexical_store.search(
+        # The OpenSearch client is synchronous. A worker thread keeps the event
+        # loop free, which is what lets fusion (Task 6.4) run channels in parallel.
+        hits = await asyncio.to_thread(
+            self.lexical_store.search,
             query=query,
             limit=k,
             filters=filters,
@@ -91,8 +95,10 @@ class LexicalRetriever:
 
     async def candidate_count(self, filters: RetrievalFilters | None) -> int:
         """Chunks the filter admits under the current chunking version."""
-        return self.lexical_store.count(
-            chunking_version=self.settings.CHUNKING_VERSION, filters=filters
+        return await asyncio.to_thread(
+            self.lexical_store.count,
+            chunking_version=self.settings.CHUNKING_VERSION,
+            filters=filters,
         )
 
     def config_snapshot(

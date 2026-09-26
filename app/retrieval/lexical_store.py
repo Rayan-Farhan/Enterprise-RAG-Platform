@@ -248,6 +248,10 @@ class OpenSearchLexicalStore:
                 verify_certs=self.settings.OPENSEARCH_VERIFY_CERTS,
                 ssl_show_warn=False,
                 timeout=30,
+                # A derived index being down should cost fusion one channel, fast.
+                # The client default (3 retries) took 16 s to give up on a
+                # refused connection.
+                max_retries=1,
             )
         return self._client
 

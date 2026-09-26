@@ -7,6 +7,7 @@ so that contract is deliberately channel-agnostic already.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 
@@ -63,7 +64,10 @@ class DenseRetriever:
 
         query_vector = await self.embeddings.embed_query(query)
 
-        hits = self.vector_store.search(
+        # The Qdrant client is synchronous; see LexicalRetriever for why it runs
+        # on a worker thread.
+        hits = await asyncio.to_thread(
+            self.vector_store.search,
             query_vector=query_vector,
             limit=k,
             filters=filters,
@@ -99,7 +103,8 @@ class DenseRetriever:
 
     async def candidate_count(self, filters: RetrievalFilters | None) -> int:
         """Points the filter admits under the current chunking and embedding versions."""
-        return self.vector_store.count_matching(
+        return await asyncio.to_thread(
+            self.vector_store.count_matching,
             filters=filters,
             chunking_version=self.settings.CHUNKING_VERSION,
             embedding_version=self.settings.effective_embedding_version,
