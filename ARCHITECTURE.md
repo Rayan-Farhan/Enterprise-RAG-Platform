@@ -1,5 +1,10 @@
 # Enterprise Multimodal RAG Platform — Current Architecture & Technology Baseline
 
+> **This file describes Stages 0-2 only and is out of date.** For the current
+> state of the repository - progress through Stage 5, the actual directory
+> structure, and what each module is for - see
+> [`docs/roadmap/CURRENT_STATE.md`](docs/roadmap/CURRENT_STATE.md).
+
 > **Current Implementation State:** Completed through **Stage 0 (Foundations & Model Gateway)**, **Stage 1 (Document Intelligence & Parsers)**, and **Stage 2 (Canonical Model, Persistence & Object Storage)**.
 
 ---
