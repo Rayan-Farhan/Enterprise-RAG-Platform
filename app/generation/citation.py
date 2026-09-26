@@ -20,6 +20,11 @@ logger = get_logger("app.generation.citation")
 
 # Inline markers: [1], [2], [1, 3], [1][2]
 _MARKER_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+# OpenAI-lineage models (Groq's gpt-oss, the fallback generator) cite as 【1】 or
+# 【1†L1-L3】 regardless of the prompt. Left alone, a correctly cited answer reads
+# as uncited and is rejected. Normalising to [1] changes nothing about what is
+# allowed: the marker still has to be one the context supplied.
+_FULLWIDTH_MARKER_RE = re.compile(r"【\s*(\d+(?:\s*,\s*\d+)*)\s*(?:†[^】]*)?】")
 _SUPPORT_LINE_RE = re.compile(
     r"^\s*SUPPORT\s*:\s*(grounded|partial|insufficient)\s*$",
     re.IGNORECASE | re.MULTILINE,
@@ -70,6 +75,7 @@ class CitationValidator:
     ) -> CitationValidationResult:
         """Validate and clean a generated answer against its own context."""
         answer, declared_support = self._extract_support(raw_answer)
+        answer = _FULLWIDTH_MARKER_RE.sub(r"[\1]", answer)
         allowed = context.allowed_markers
 
         used = self._extract_markers(answer)

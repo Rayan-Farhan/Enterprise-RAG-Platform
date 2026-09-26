@@ -250,3 +250,44 @@ class TestSupportLineExtraction:
         assert "SUPPORT" not in result.answer
         assert "```" not in result.answer
         assert result.support is SupportState.GROUNDED
+
+
+class TestFullwidthMarkers:
+    """Groq's gpt-oss cites as 【1】 or 【1†L1-L3】 whatever the prompt says.
+
+    Before normalisation, experiment 003 rejected correctly cited Groq answers as
+    uncited (dev-calc-002, dev-factual-015), replacing a right answer with a refusal.
+    """
+
+    @pytest.mark.parametrize(
+        "raw_marker",
+        ["【1】", "【1†L1-L3】", "【 1 】", "【1†source】"],
+    )
+    def test_fullwidth_marker_is_accepted_as_a_citation(
+        self, validator: CitationValidator, context: AssembledContext, raw_marker: str
+    ) -> None:
+        raw = f"Annual leave is 21 days {raw_marker}.\n\nSUPPORT: grounded"
+        result = validator.validate(raw, context)
+
+        assert not result.rejected
+        assert [c.marker for c in result.citations] == ["1"]
+        assert "【" not in result.answer
+        assert "[1]" in result.answer
+
+    def test_adjacent_fullwidth_markers_both_resolve(
+        self, validator: CitationValidator, context: AssembledContext
+    ) -> None:
+        raw = "Leave is 16 days【1†L1-L3】【2†L1-L2】.\n\nSUPPORT: grounded"
+        result = validator.validate(raw, context)
+
+        assert sorted(c.marker for c in result.citations) == ["1", "2"]
+
+    def test_fullwidth_marker_outside_the_context_is_still_fabricated(
+        self, validator: CitationValidator, context: AssembledContext
+    ) -> None:
+        """Normalising the syntax must not loosen what counts as a real citation."""
+        raw = "The company provides housing【9†L1】.\n\nSUPPORT: grounded"
+        result = validator.validate(raw, context)
+
+        assert result.fabricated_markers == ["9"]
+        assert result.rejected
