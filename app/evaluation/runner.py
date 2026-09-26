@@ -429,10 +429,14 @@ class ExperimentRunner:
             query=question.question, chunks=expansion.chunks
         )
 
+        # Layer 0 scores what the retriever ranked, exactly as the generation
+        # path does (_retrieval_case). Scoring the expanded parents instead
+        # inflated recall and nDCG whenever expansion was on, because a parent
+        # section covers many more elements than the leaf that matched.
         context_ids = {c.chunk_id for c in context.included_chunks}
-        result.retrieved_chunk_ids = [c.chunk_id for c in expansion.chunks]
+        result.retrieved_chunk_ids = [c.chunk_id for c in retrieval.chunks]
         result.retrieved_element_ids = sorted(
-            {eid for chunk in expansion.chunks for eid in chunk.element_ids}
+            {eid for chunk in retrieval.chunks for eid in chunk.element_ids}
         )
         result.context_element_ids = sorted(
             {
@@ -450,7 +454,7 @@ class ExperimentRunner:
         result.retrieval_metrics = retrieval_metrics.compute_case_metrics(
             retrieval_metrics.RetrievalCase(
                 question_id=question.question_id,
-                retrieved_element_sets=[frozenset(chunk.element_ids) for chunk in expansion.chunks],
+                retrieved_element_sets=[frozenset(chunk.element_ids) for chunk in retrieval.chunks],
                 relevant_element_ids=frozenset(question.expected_element_ids()),
                 context_element_ids=frozenset(result.context_element_ids),
             )

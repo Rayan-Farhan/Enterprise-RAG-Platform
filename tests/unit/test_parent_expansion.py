@@ -137,7 +137,8 @@ class TestExpansion:
         session = FakeSession([parent_chunk(parent_id)])
 
         result = await expander().expand(
-            [leaf(parent_id, rank=3, score=0.77)], session  # type: ignore[arg-type]
+            [leaf(parent_id, rank=3, score=0.77)],
+            session,  # type: ignore[arg-type]
         )
 
         assert result.chunks[0].rank == 3
@@ -150,7 +151,8 @@ class TestExpansion:
         session = FakeSession([parent_chunk(parent_id)])
 
         result = await expander().expand(
-            [leaf(parent_id, chunk_id=child_id)], session  # type: ignore[arg-type]
+            [leaf(parent_id, chunk_id=child_id)],
+            session,  # type: ignore[arg-type]
         )
 
         assert result.chunks[0].metadata["expanded_from_chunk_id"] == str(child_id)
@@ -200,7 +202,8 @@ class TestBudget:
         session = FakeSession([big_parent])
 
         result = await expander(budget=500).expand(
-            [leaf(big_parent.id, tokens=100)], session  # type: ignore[arg-type]
+            [leaf(big_parent.id, tokens=100)],
+            session,  # type: ignore[arg-type]
         )
 
         assert result.expanded == 0
@@ -303,8 +306,8 @@ class TestExpansionInstrumentation:
             query="q",
             answer="a",
             support=SupportState.GROUNDED,
-            retrieved_chunks=[child],       # what retrieval ranked
-            context_chunks=[parent],        # what generation actually read
+            retrieved_chunks=[child],  # what retrieval ranked
+            context_chunks=[parent],  # what generation actually read
             context_chunk_ids=[parent_id],
         )
 
@@ -318,3 +321,79 @@ class TestExpansionInstrumentation:
 
         # Without the fix this is empty: the parent's ID is not among the leaves.
         assert result.context_element_ids == ["e1", "e2", "e3"]
+
+
+class TestRetrievalOnlyScoresWhatWasRanked:
+    """experiment-020 regression: retrieval-only runs scored the expanded parents.
+
+    With expansion on, recall@10 and nDCG measured sections instead of the
+    leaves the retriever ranked, inflating both. The generation path already
+    scored the leaves (commit 9d6565b); the retrieval-only path now matches.
+    """
+
+    async def test_layer0_uses_leaves_and_context_uses_parents(self) -> None:
+        import time
+
+        from app.evaluation.metrics.system import SystemMetrics
+        from app.evaluation.runner import ExperimentRunner
+        from app.evaluation.schemas import DatasetSplit, ExpectedEvidence, GoldenQuestion
+        from app.generation.context import ContextAssembler
+        from app.retrieval.expansion import ExpansionResult
+        from app.retrieval.schemas import RetrievalResult
+
+        parent_id = uuid.uuid4()
+        matched = leaf(parent_id, rank=1)  # element e2 only
+        parent = matched.model_copy(
+            update={"chunk_id": parent_id, "element_ids": ["e1", "e2", "e3"], "token_count": 300}
+        )
+
+        class Retriever:
+            async def retrieve(self, **_: Any) -> RetrievalResult:
+                return RetrievalResult(query="q", chunks=[matched])
+
+        class Expander:
+            async def expand(self, chunks: Any, session: Any) -> ExpansionResult:
+                return ExpansionResult(chunks=[parent], expanded=1)
+
+        class Generation:
+            retriever = Retriever()
+            expander = Expander()
+            assembler = ContextAssembler(AppSettings(APP_ENV="testing"))
+
+        settings = AppSettings(APP_ENV="testing")
+        runner = ExperimentRunner(generation_service=Generation(), settings=settings)  # type: ignore[arg-type]
+        question = GoldenQuestion(
+            question_id="dev-factual-001",
+            question="How many hours of sick leave?",
+            question_type=QuestionType.FACTUAL,
+            split=DatasetSplit.DEV,
+            acceptable_answer="96 hours",
+            expected_evidence=[
+                ExpectedEvidence(
+                    document_id=DOCUMENT_ID,
+                    version_id=VERSION_ID,
+                    element_ids=["e1", "e3"],
+                    page_numbers=[21],
+                )
+            ],
+        )
+        result = QuestionResult(
+            question_id=question.question_id,
+            question=question.question,
+            question_type=question.question_type,
+            difficulty=Difficulty.EASY,
+        )
+
+        scored = await runner._evaluate_retrieval_only(
+            question,
+            None,
+            result,
+            SystemMetrics(total_questions=1),
+            time.perf_counter(),  # type: ignore[arg-type]
+        )
+
+        # The ranked leaf holds neither expected element: Layer 0 finds nothing...
+        assert scored.retrieval_metrics["recall@10"] == 0.0
+        assert scored.retrieved_element_ids == ["e2"]
+        # ...while the parent that reached the context delivers both.
+        assert scored.retrieval_metrics["context_recall"] == 1.0
