@@ -83,6 +83,47 @@ class TestCheckpointStore:
 
         assert storage.load_checkpoint("experiment-001-baseline", tmp_path) == {}
 
+    @pytest.mark.parametrize(
+        "error",
+        [
+            # Verbatim from experiment-006: Gemini overloaded, not our failure.
+            "ModelProviderException: Provider 'gemini' failed: gemini API returned "
+            'error 503: {"error": {"code": 503, "message": "This model is currently '
+            'experiencing high demand."}}',
+            "ModelProviderException: groq failed (HTTP 502): bad gateway",
+        ],
+    )
+    def test_provider_outages_are_not_checkpointed(self, tmp_path: Path, error: str) -> None:
+        storage.append_checkpoint(
+            "experiment-001-baseline", result("dev-factual-001", error=error), tmp_path
+        )
+
+        assert storage.load_checkpoint("experiment-001-baseline", tmp_path) == {}
+
+    def test_an_outage_checkpointed_before_it_was_recognised_is_retried(
+        self, tmp_path: Path
+    ) -> None:
+        # experiment-006's checkpoint holds a Gemini 503 written as a genuine
+        # failure; without this, the resume would never re-ask that question.
+        path = storage.checkpoint_path("experiment-001-baseline", tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        outage = result("dev-factual-002", error="gemini API returned error 503: overloaded")
+        path.write_text(
+            result("dev-factual-001").model_dump_json() + "\n" + outage.model_dump_json() + "\n",
+            encoding="utf-8",
+        )
+
+        assert list(storage.load_checkpoint("experiment-001-baseline", tmp_path)) == [
+            "dev-factual-001"
+        ]
+
+    @pytest.mark.parametrize(
+        "error",
+        ["ValueError: chunk had no text", "KeyError: 'element 5031 not found'"],
+    )
+    def test_numbers_in_ordinary_errors_are_not_mistaken_for_outages(self, error: str) -> None:
+        assert not result("dev-factual-001", error=error).failed_on_quota
+
     def test_genuine_failures_are_checkpointed(self, tmp_path: Path) -> None:
         storage.append_checkpoint(
             "experiment-001-baseline",

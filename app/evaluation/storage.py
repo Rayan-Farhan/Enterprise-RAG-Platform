@@ -129,6 +129,11 @@ def load_checkpoint(name: str, directory: Path | None = None) -> dict[str, Quest
         except ValueError:
             logger.warning("checkpoint_line_unreadable", path=str(path), line=line_number)
             continue
+        if result.failed_on_quota:
+            # Written before the classification recognised this failure as a
+            # provider refusal. Dropping it means the resume re-evaluates it.
+            results.pop(result.question_id, None)
+            continue
         results[result.question_id] = result
 
     logger.info("checkpoint_loaded", name=name, questions=len(results))

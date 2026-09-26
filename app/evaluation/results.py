@@ -10,6 +10,7 @@ alongside them in a commit message. Stage 14 compares against
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -17,6 +18,10 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.evaluation.schemas import DatasetSplit, Difficulty, QuestionType
+
+# How provider adapters word a server-side failure: "returned error 503",
+# "HTTP 502", "status 504".
+_PROVIDER_UNAVAILABLE_RE = re.compile(r"(?:error|http|status)[\s:]*5\d\d\b")
 
 
 def _now() -> datetime:
@@ -89,16 +94,22 @@ class QuestionResult(BaseModel):
 
     @property
     def failed_on_quota(self) -> bool:
-        """True when the failure was a provider quota or rate limit, not the system.
+        """True when a provider refused or could not serve the call, not the system.
 
-        These results are never checkpointed: the question was not measured, it
-        was refused, and recording it would bake an infrastructure limit into the
-        experiment as if it were pipeline behaviour.
+        Covers rate limits (429) and provider-side unavailability (5xx, e.g.
+        Gemini's 503 "model is currently experiencing high demand"). These
+        results are never checkpointed: the question was not measured, it was
+        refused, and recording it would bake an infrastructure limit into the
+        experiment as if it were pipeline behaviour. A resume re-evaluates them.
         """
         if self.error is None:
             return False
         haystack = self.error.lower()
-        return "ratelimit" in haystack.replace(" ", "") or "429" in haystack
+        return (
+            "ratelimit" in haystack.replace(" ", "")
+            or "429" in haystack
+            or _PROVIDER_UNAVAILABLE_RE.search(haystack) is not None
+        )
 
     def all_metrics(self) -> dict[str, float]:
         """Every metric this question contributed, in one mapping."""
