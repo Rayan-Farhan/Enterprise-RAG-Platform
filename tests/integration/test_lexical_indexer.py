@@ -117,3 +117,52 @@ class TestLexicalIndexer:
         indexer = LexicalIndexer(lexical_store=RecordingStore(), settings=settings)  # type: ignore[arg-type]
         with pytest.raises(NotFoundException):
             await indexer.index_version(session, uuid.uuid4())
+
+
+class RecordingSparseStore(RecordingStore):
+    """Adds the skip-existing lookup the sparse indexer relies on."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.encoded: list[str] = []
+
+    def existing_ids(self, chunk_ids: list[str]) -> set[str]:
+        return {cid for cid in chunk_ids if cid in self.documents}
+
+    def upsert(self, payloads: list[ChunkPayload], refresh: bool = True) -> int:
+        self.encoded.extend(p.chunk_id for p in payloads)
+        return super().upsert(payloads, refresh)
+
+
+class TestSparseIndexer:
+    """Encoding costs about a second per chunk, so re-runs must not repeat it."""
+
+    async def test_a_rerun_encodes_nothing_already_present(
+        self, session: AsyncSession, chunked: DocumentVersion, settings: AppSettings
+    ) -> None:
+        from app.retrieval.indexer import SparseIndexer
+
+        store = RecordingSparseStore()
+        indexer = SparseIndexer(sparse_store=store, settings=settings)  # type: ignore[arg-type]
+
+        first = await indexer.index_version(session, chunked.id)
+        second = await indexer.index_version(session, chunked.id)
+
+        assert first.documents_encoded > 0 and first.documents_skipped == 0
+        assert second.documents_encoded == 0
+        assert second.documents_skipped == first.documents_encoded
+        assert len(store.encoded) == first.documents_encoded
+
+    async def test_force_re_encodes_everything(
+        self, session: AsyncSession, chunked: DocumentVersion, settings: AppSettings
+    ) -> None:
+        from app.retrieval.indexer import SparseIndexer
+
+        store = RecordingSparseStore()
+        indexer = SparseIndexer(sparse_store=store, settings=settings)  # type: ignore[arg-type]
+
+        first = await indexer.index_version(session, chunked.id)
+        forced = await indexer.index_version(session, chunked.id, force=True)
+
+        assert forced.documents_encoded == first.documents_encoded
+        assert forced.documents_skipped == 0

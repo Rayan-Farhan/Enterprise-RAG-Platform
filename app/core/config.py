@@ -154,7 +154,7 @@ class AppSettings(BaseSettings):
     # Retrieval channel selection (Stage 6, ADR-007/008). Task 6.4 adds "hybrid"
     # (RRF fusion); until then one channel serves generation at a time, which is
     # also what the Task 6.7 single-channel experiments need.
-    RETRIEVAL_MODE: Literal["dense", "bm25"] = Field(
+    RETRIEVAL_MODE: Literal["dense", "bm25", "sparse"] = Field(
         default="dense",
         description="Which retrieval channel feeds generation and evaluation",
     )
@@ -165,6 +165,22 @@ class AppSettings(BaseSettings):
             "is indexed. Off means OpenSearch is not required, and bm25 mode finds nothing"
         ),
     )
+
+    # Neural sparse retrieval (Stage 6, Task 6.2, ADR-008). Runs inside OpenSearch
+    # in "doc-only" mode: documents are expanded by a sparse encoder at index
+    # time through an ingest pipeline, and queries are only tokenized, so search
+    # needs no model inference. Off by default: it needs the ML models deployed
+    # (scripts/setup_neural_sparse.py) and ~1 GB of OpenSearch native memory.
+    ENABLE_NEURAL_SPARSE: bool = Field(
+        default=False,
+        description="Index chunks into the neural sparse index and allow RETRIEVAL_MODE=sparse",
+    )
+    SPARSE_INDEX_NAME: str = "enterprise_rag_chunks_sparse"
+    SPARSE_INGEST_PIPELINE: str = "enterprise_rag_sparse_encoding"
+    SPARSE_DOC_MODEL: str = "amazon/neural-sparse/opensearch-neural-sparse-encoding-doc-v2-distill"
+    SPARSE_DOC_MODEL_VERSION: str = "1.0.0"
+    SPARSE_QUERY_TOKENIZER: str = "amazon/neural-sparse/opensearch-neural-sparse-tokenizer-v1"
+    SPARSE_QUERY_TOKENIZER_VERSION: str = "1.0.1"
 
     # Dense Retrieval (Stage 3, ADR-007)
     RETRIEVAL_TOP_K: int = 8

@@ -38,6 +38,18 @@ def get_retriever(settings: AppSettings | None = None) -> Retriever:
     Imported lazily so selecting one channel never constructs the other's client.
     """
     resolved = settings or get_settings()
+    if resolved.RETRIEVAL_MODE == "sparse":
+        if not resolved.ENABLE_NEURAL_SPARSE:
+            # Fail at selection, not at the first query: a sparse run against an
+            # index nobody is populating would measure an empty channel.
+            raise ValueError(
+                "RETRIEVAL_MODE=sparse requires ENABLE_NEURAL_SPARSE=true and the "
+                "models from scripts/setup_neural_sparse.py"
+            )
+        from app.retrieval.sparse import SparseRetriever, get_sparse_retriever
+
+        return get_sparse_retriever() if settings is None else SparseRetriever(settings=resolved)
+
     if resolved.RETRIEVAL_MODE == "bm25":
         from app.retrieval.lexical import LexicalRetriever, get_lexical_retriever
 

@@ -21,6 +21,7 @@ from app.ingestion.chunking.base import compute_point_id
 from app.retrieval.embedding import EmbeddingService, get_embedding_service
 from app.retrieval.lexical_store import OpenSearchLexicalStore, get_lexical_store
 from app.retrieval.schemas import ChunkPayload
+from app.retrieval.sparse_store import OpenSearchSparseStore, get_sparse_store
 from app.retrieval.vector_store import QdrantVectorStore, VectorPoint, get_vector_store
 
 logger = get_logger("app.retrieval.indexer")
@@ -122,7 +123,6 @@ class ChunkIndexer:
                 f"Embedding count mismatch: {len(embedded.vectors)} vectors "
                 f"for {len(pending)} chunks"
             )
-
 
         # The collection is created with the dimensionality the provider actually
         # returned, not the configured guess, so a provider default change is a
@@ -248,17 +248,36 @@ class LexicalIndexer:
     async def index_version(
         self, session: AsyncSession, version_id: uuid.UUID
     ) -> LexicalIndexingResult:
-        doc_repo = DocumentRepository(session)
-        version = await doc_repo.get_version_by_id(version_id)
+        payloads = await self.payloads_for_version(session, version_id)
+
+        self.lexical_store.ensure_index()
+        indexed = self.lexical_store.upsert(payloads)
+        logger.info(
+            "lexical_indexing_complete",
+            version_id=str(version_id),
+            chunking_version=self.settings.CHUNKING_VERSION,
+            documents=indexed,
+        )
+        return LexicalIndexingResult(
+            version_id=version_id,
+            chunking_version=self.settings.CHUNKING_VERSION,
+            documents_indexed=indexed,
+        )
+
+    async def payloads_for_version(
+        self, session: AsyncSession, version_id: uuid.UUID
+    ) -> list[ChunkPayload]:
+        """Every chunk of the version under the current chunking version, as payloads."""
+        version = await DocumentRepository(session).get_version_by_id(version_id)
         if version is None:
             raise NotFoundException(f"Document version '{version_id}' was not found")
 
-        chunking_version = self.settings.CHUNKING_VERSION
-        chunks = await ChunkRepository(session).list_by_version(version_id, chunking_version)
-
+        chunks = await ChunkRepository(session).list_by_version(
+            version_id, self.settings.CHUNKING_VERSION
+        )
         metadata = ChunkIndexer._metadata_payload(version)
         document_title = version.document.title if version.document else None
-        payloads = [
+        return [
             ChunkIndexer._build_payload(
                 chunk=chunk,
                 embedding_version=self.settings.effective_embedding_version,
@@ -268,23 +287,67 @@ class LexicalIndexer:
             for chunk in chunks
         ]
 
-        self.lexical_store.ensure_index()
-        indexed = self.lexical_store.upsert(payloads)
-        logger.info(
-            "lexical_indexing_complete",
-            version_id=str(version_id),
-            chunking_version=chunking_version,
-            documents=indexed,
+
+@dataclass
+class SparseIndexingResult:
+    """Outcome of encoding one version's chunks into the neural sparse index."""
+
+    version_id: uuid.UUID
+    chunking_version: str
+    documents_encoded: int
+    documents_skipped: int
+
+
+class SparseIndexer(LexicalIndexer):
+    """Encodes a version's chunks into the neural sparse index (Task 6.2).
+
+    Encoding runs a transformer over every chunk (about a second each on CPU),
+    so unlike BM25 indexing it skips chunks already in the index. Chunk IDs are
+    deterministic and content-derived (ADR-036), so a present ID means the same
+    text was already encoded. ``force`` re-encodes everything, which a model
+    change requires.
+    """
+
+    def __init__(
+        self,
+        sparse_store: OpenSearchSparseStore | None = None,
+        settings: AppSettings | None = None,
+    ) -> None:
+        resolved = settings or get_settings()
+        self.settings = resolved
+        self.sparse_store = sparse_store or (
+            OpenSearchSparseStore(settings=settings) if settings else get_sparse_store()
         )
-        return LexicalIndexingResult(
+        self.lexical_store = self.sparse_store
+
+    async def index_version(  # type: ignore[override]
+        self, session: AsyncSession, version_id: uuid.UUID, force: bool = False
+    ) -> SparseIndexingResult:
+        payloads = await self.payloads_for_version(session, version_id)
+
+        self.sparse_store.ensure_index()
+        present = set() if force else self.sparse_store.existing_ids([p.chunk_id for p in payloads])
+        pending = [p for p in payloads if p.chunk_id not in present]
+        encoded = self.sparse_store.upsert(pending)
+
+        logger.info(
+            "sparse_indexing_complete",
+            version_id=str(version_id),
+            chunking_version=self.settings.CHUNKING_VERSION,
+            encoded=encoded,
+            skipped=len(present),
+        )
+        return SparseIndexingResult(
             version_id=version_id,
-            chunking_version=chunking_version,
-            documents_indexed=indexed,
+            chunking_version=self.settings.CHUNKING_VERSION,
+            documents_encoded=encoded,
+            documents_skipped=len(present),
         )
 
 
 _chunk_indexer: ChunkIndexer | None = None
 _lexical_indexer: LexicalIndexer | None = None
+_sparse_indexer: SparseIndexer | None = None
 
 
 def get_chunk_indexer() -> ChunkIndexer:
@@ -301,3 +364,11 @@ def get_lexical_indexer() -> LexicalIndexer:
     if _lexical_indexer is None:
         _lexical_indexer = LexicalIndexer()
     return _lexical_indexer
+
+
+def get_sparse_indexer() -> SparseIndexer:
+    """Return the singleton SparseIndexer."""
+    global _sparse_indexer
+    if _sparse_indexer is None:
+        _sparse_indexer = SparseIndexer()
+    return _sparse_indexer
