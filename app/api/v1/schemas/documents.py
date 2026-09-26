@@ -158,6 +158,7 @@ class IndexVersionResponse(BaseModel):
     embedding_dimensions: int
     rate_limit_waits: int
     lexical_documents_indexed: int = 0
+    sparse_documents_encoded: int = 0
 
     was_noop: bool = Field(
         description="True when re-running changed nothing — the idempotency signal"
