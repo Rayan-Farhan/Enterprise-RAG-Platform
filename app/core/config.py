@@ -151,6 +151,21 @@ class AppSettings(BaseSettings):
     EMBEDDING_MAX_RPM: int = 60
     EMBEDDING_MAX_RETRIES: int = 5
 
+    # Retrieval channel selection (Stage 6, ADR-007/008). Task 6.4 adds "hybrid"
+    # (RRF fusion); until then one channel serves generation at a time, which is
+    # also what the Task 6.7 single-channel experiments need.
+    RETRIEVAL_MODE: Literal["dense", "bm25"] = Field(
+        default="dense",
+        description="Which retrieval channel feeds generation and evaluation",
+    )
+    ENABLE_LEXICAL_INDEXING: bool = Field(
+        default=True,
+        description=(
+            "Write chunks to the OpenSearch BM25 index alongside Qdrant when a version "
+            "is indexed. Off means OpenSearch is not required, and bm25 mode finds nothing"
+        ),
+    )
+
     # Dense Retrieval (Stage 3, ADR-007)
     RETRIEVAL_TOP_K: int = 8
     RETRIEVAL_CANDIDATE_LIMIT: int = 50

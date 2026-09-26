@@ -97,6 +97,7 @@ def config_snapshot(settings: AppSettings) -> dict[str, object]:
         "chunk_overlap_tokens": settings.CHUNK_OVERLAP_TOKENS,
         "embedding_version": settings.effective_embedding_version,
         "embedding_dimensions": settings.EMBEDDING_DIMENSIONS,
+        "retrieval_mode": settings.RETRIEVAL_MODE,
         "retrieval_top_k": settings.RETRIEVAL_TOP_K,
         "retrieval_min_score": settings.RETRIEVAL_MIN_SCORE,
         "retrieval_candidate_limit": settings.RETRIEVAL_CANDIDATE_LIMIT,

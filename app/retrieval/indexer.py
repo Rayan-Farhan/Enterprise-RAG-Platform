@@ -19,6 +19,7 @@ from app.db.repositories.chunk_repo import ChunkRepository
 from app.db.repositories.document_repo import DocumentRepository
 from app.ingestion.chunking.base import compute_point_id
 from app.retrieval.embedding import EmbeddingService, get_embedding_service
+from app.retrieval.lexical_store import OpenSearchLexicalStore, get_lexical_store
 from app.retrieval.schemas import ChunkPayload
 from app.retrieval.vector_store import QdrantVectorStore, VectorPoint, get_vector_store
 
@@ -217,7 +218,73 @@ class ChunkIndexer:
         )
 
 
+@dataclass
+class LexicalIndexingResult:
+    """Outcome of writing one version's chunks to the BM25 index."""
+
+    version_id: uuid.UUID
+    chunking_version: str
+    documents_indexed: int
+
+
+class LexicalIndexer:
+    """Writes a version's chunks into the OpenSearch BM25 index (Task 6.1).
+
+    Unlike vector indexing there is nothing metered to skip: BM25 indexing costs
+    no provider call, so every run writes every chunk of the version, keyed on
+    the deterministic chunk ID. Re-running overwrites in place — zero duplicates
+    — and backfilling a corpus that was vector-indexed before this channel
+    existed needs no special path.
+    """
+
+    def __init__(
+        self,
+        lexical_store: OpenSearchLexicalStore | None = None,
+        settings: AppSettings | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.lexical_store = lexical_store or get_lexical_store()
+
+    async def index_version(
+        self, session: AsyncSession, version_id: uuid.UUID
+    ) -> LexicalIndexingResult:
+        doc_repo = DocumentRepository(session)
+        version = await doc_repo.get_version_by_id(version_id)
+        if version is None:
+            raise NotFoundException(f"Document version '{version_id}' was not found")
+
+        chunking_version = self.settings.CHUNKING_VERSION
+        chunks = await ChunkRepository(session).list_by_version(version_id, chunking_version)
+
+        metadata = ChunkIndexer._metadata_payload(version)
+        document_title = version.document.title if version.document else None
+        payloads = [
+            ChunkIndexer._build_payload(
+                chunk=chunk,
+                embedding_version=self.settings.effective_embedding_version,
+                document_title=document_title,
+                metadata=metadata,
+            )
+            for chunk in chunks
+        ]
+
+        self.lexical_store.ensure_index()
+        indexed = self.lexical_store.upsert(payloads)
+        logger.info(
+            "lexical_indexing_complete",
+            version_id=str(version_id),
+            chunking_version=chunking_version,
+            documents=indexed,
+        )
+        return LexicalIndexingResult(
+            version_id=version_id,
+            chunking_version=chunking_version,
+            documents_indexed=indexed,
+        )
+
+
 _chunk_indexer: ChunkIndexer | None = None
+_lexical_indexer: LexicalIndexer | None = None
 
 
 def get_chunk_indexer() -> ChunkIndexer:
@@ -226,3 +293,11 @@ def get_chunk_indexer() -> ChunkIndexer:
     if _chunk_indexer is None:
         _chunk_indexer = ChunkIndexer()
     return _chunk_indexer
+
+
+def get_lexical_indexer() -> LexicalIndexer:
+    """Return the singleton LexicalIndexer."""
+    global _lexical_indexer
+    if _lexical_indexer is None:
+        _lexical_indexer = LexicalIndexer()
+    return _lexical_indexer

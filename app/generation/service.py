@@ -19,7 +19,7 @@ from app.generation.citation import (
 )
 from app.generation.context import AssembledContext, ContextAssembler, get_context_assembler
 from app.models.gateway import ModelGateway, get_model_gateway
-from app.retrieval.dense import DenseRetriever, get_dense_retriever
+from app.retrieval.channels import Retriever, get_retriever
 from app.retrieval.expansion import ParentExpander, get_parent_expander
 from app.retrieval.schemas import Citation, RetrievalFilters, RetrievedChunk
 
@@ -85,7 +85,7 @@ class GenerationService:
 
     def __init__(
         self,
-        retriever: DenseRetriever | None = None,
+        retriever: Retriever | None = None,
         assembler: ContextAssembler | None = None,
         validator: CitationValidator | None = None,
         gateway: ModelGateway | None = None,
@@ -93,7 +93,9 @@ class GenerationService:
         settings: AppSettings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.retriever = retriever or get_dense_retriever()
+        # RETRIEVAL_MODE picks the channel; explicit settings get a retriever
+        # built from them rather than the process-wide singleton.
+        self.retriever = retriever or get_retriever(settings)
         self.assembler = assembler or get_context_assembler()
         self.validator = validator or get_citation_validator()
         self.gateway = gateway or get_model_gateway()
