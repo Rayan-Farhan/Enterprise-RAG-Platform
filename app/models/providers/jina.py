@@ -10,6 +10,8 @@ from app.models.schemas import (
     EmbeddingResult,
     EmbeddingsResponse,
     ModelMetadata,
+    MultiVectorEmbedding,
+    MultiVectorResponse,
     RerankResult,
     ScoredDocument,
     TokenCounts,
@@ -32,6 +34,65 @@ class JinaProvider(BaseProvider):
         self.default_rerank_model = default_rerank_model
         self.embed_url = "https://api.jina.ai/v1/embeddings"
         self.rerank_url = "https://api.jina.ai/v1/rerank"
+        self.multivector_url = "https://api.jina.ai/v1/multi-vector"
+
+    async def embed_multivector(
+        self,
+        texts: list[str],
+        input_type: str,
+        model_name: str = "jina-colbert-v2",
+        dimensions: int = 128,
+    ) -> MultiVectorResponse:
+        """Per-token embeddings for late interaction (ColBERT, ADR-012).
+
+        ``input_type`` matters: ColBERT encodes queries and documents with
+        different markers, and queries are padded to a fixed token count.
+        """
+        start_time = time.perf_counter()
+        if not texts:
+            return MultiVectorResponse(
+                embeddings=[],
+                dimensions=dimensions,
+                metadata=ModelMetadata(provider="jina", model_name=model_name, latency_ms=0.0),
+            )
+        self.require_credentials(self.api_key, "JINA_API_KEY")
+
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "input": texts,
+            "input_type": input_type,
+            "dimensions": dimensions,
+            "embedding_type": "float",
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async def _call() -> dict[str, Any]:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                res = await client.post(self.multivector_url, json=payload, headers=headers)
+                self.raise_for_response(res)
+                return res.json()  # type: ignore[no-any-return]
+
+        data = await self.execute_with_retry(_call)
+        usage = data.get("usage", {})
+        return MultiVectorResponse(
+            embeddings=[
+                MultiVectorEmbedding(vectors=item.get("embeddings", []), index=item.get("index", i))
+                for i, item in enumerate(data.get("data", []))
+            ],
+            dimensions=dimensions,
+            metadata=ModelMetadata(
+                provider="jina",
+                model_name=model_name,
+                latency_ms=(time.perf_counter() - start_time) * 1000.0,
+                token_counts=TokenCounts(
+                    prompt_tokens=usage.get("total_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0),
+                ),
+            ),
+        )
 
     async def embed(
         self,

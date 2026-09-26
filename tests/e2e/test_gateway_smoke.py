@@ -82,6 +82,22 @@ class TestHostedProfileSmoke:
         assert len({len(item.embedding) for item in result.embeddings}) == 1
         assert_complete_metadata(result.metadata)
 
+    async def test_multivector_returns_token_matrices(self, live_settings: AppSettings) -> None:
+        """Late interaction (ADR-012): a vector per token, queries padded to a fixed length."""
+        _require(live_settings.JINA_API_KEY, "JINA_API_KEY")
+        gateway = HostedModelGateway(live_settings)
+
+        query = await gateway.embed_multivector(["annual leave days"], input_type="query")
+        document = await gateway.embed_multivector(
+            ["Full-time employees are entitled to 21 days of paid annual leave each year."],
+            input_type="document",
+        )
+
+        assert len(query.embeddings[0].vectors) > 1
+        assert len(document.embeddings[0].vectors) > 1
+        assert len(query.embeddings[0].vectors[0]) == live_settings.LATE_INTERACTION_DIMENSIONS
+        assert_complete_metadata(query.metadata)
+
     async def test_rerank_returns_scores_and_metadata(self, live_settings: AppSettings) -> None:
         _require(live_settings.JINA_API_KEY, "JINA_API_KEY")
         gateway = HostedModelGateway(live_settings)

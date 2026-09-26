@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Protocol, runtime_checkable
 
 from app.core.config import AppSettings, get_settings
+from app.core.exceptions import ModelProviderException
 from app.core.logging import get_logger
 from app.models.providers.gemini import GeminiProvider
 from app.models.providers.groq import GroqProvider
@@ -15,6 +16,7 @@ from app.models.schemas import (
     EmbeddingsResponse,
     GenerationResult,
     ImagePayload,
+    MultiVectorResponse,
     RerankResult,
 )
 
@@ -48,6 +50,14 @@ class ModelGateway(Protocol):
         model_name: str | None = None,
     ) -> EmbeddingsResponse:
         """Generate dense vector embeddings for texts."""
+        ...
+
+    async def embed_multivector(
+        self,
+        texts: list[str],
+        input_type: str,
+    ) -> MultiVectorResponse:
+        """Per-token embeddings for late interaction (ADR-012); input_type query|document."""
         ...
 
     async def rerank(
@@ -162,6 +172,19 @@ class HostedModelGateway:
         """Embed texts via Jina AI."""
         return await self.jina.embed(texts=texts, model_name=model_name)
 
+    async def embed_multivector(
+        self,
+        texts: list[str],
+        input_type: str,
+    ) -> MultiVectorResponse:
+        """Late-interaction embeddings via Jina ColBERT."""
+        return await self.jina.embed_multivector(
+            texts=texts,
+            input_type=input_type,
+            model_name=self.settings.LATE_INTERACTION_MODEL,
+            dimensions=self.settings.LATE_INTERACTION_DIMENSIONS,
+        )
+
     async def rerank(
         self,
         query: str,
@@ -240,6 +263,21 @@ class LocalModelGateway:
     ) -> EmbeddingsResponse:
         return await self.tei.embed(texts=texts, model_name=model_name)
 
+    async def embed_multivector(
+        self,
+        texts: list[str],
+        input_type: str,
+    ) -> MultiVectorResponse:
+        """No local late-interaction model is deployed yet.
+
+        ADR-012 locks the capability (ColBERT/ColQwen on Qdrant multivectors),
+        not a serving path; failing loudly beats silently skipping the stage.
+        """
+        raise ModelProviderException(
+            "Late interaction is not served under the local profile yet (ADR-012)",
+            provider="local",
+        )
+
     async def rerank(
         self,
         query: str,
@@ -315,6 +353,17 @@ class StubModelGateway:
         model_name: str | None = None,
     ) -> EmbeddingsResponse:
         return await self.stub.embed(texts=texts, model_name=model_name)
+
+    async def embed_multivector(
+        self,
+        texts: list[str],
+        input_type: str,
+    ) -> MultiVectorResponse:
+        return await self.stub.embed_multivector(
+            texts=texts,
+            input_type=input_type,
+            dimensions=self.settings.LATE_INTERACTION_DIMENSIONS,
+        )
 
     async def rerank(
         self,

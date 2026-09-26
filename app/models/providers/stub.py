@@ -47,6 +47,8 @@ from app.models.schemas import (
     GenerationResult,
     ImagePayload,
     ModelMetadata,
+    MultiVectorEmbedding,
+    MultiVectorResponse,
     RerankResult,
     ScoredDocument,
     TokenCounts,
@@ -108,6 +110,43 @@ class StubProvider(BaseProvider):
             ),
         )
 
+    async def embed_multivector(
+        self,
+        texts: list[str],
+        input_type: str,
+        model_name: str | None = None,
+        dimensions: int = 128,
+    ) -> MultiVectorResponse:
+        """A signed one-hot vector per token: MaxSim then counts shared tokens."""
+        started = time.perf_counter()
+
+        def token_vector(token: str) -> list[float]:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            vector = [0.0] * dimensions
+            vector[int.from_bytes(digest[:4], "big") % dimensions] = (
+                1.0 if digest[4] % 2 == 0 else -1.0
+            )
+            return vector
+
+        embeddings = []
+        for i, text in enumerate(texts):
+            tokens = text.lower().translate(_TOKEN_SPLIT).split() or ["<empty>"]
+            embeddings.append(
+                MultiVectorEmbedding(vectors=[token_vector(t) for t in tokens], index=i)
+            )
+        return MultiVectorResponse(
+            embeddings=embeddings,
+            dimensions=dimensions,
+            metadata=self._metadata(
+                model_name=model_name or "stub-colbert",
+                started=started,
+                tokens=TokenCounts(
+                    prompt_tokens=sum(len(t.split()) for t in texts),
+                    total_tokens=sum(len(t.split()) for t in texts),
+                ),
+            ),
+        )
+
     # ---- reranking -----------------------------------------------------
 
     async def rerank(
@@ -128,7 +167,9 @@ class StubProvider(BaseProvider):
                     text=document,
                     # Map cosine [-1, 1] onto [0, 1] to match reranker conventions.
                     score=(
-                        sum(a * b for a, b in zip(query_vector, self._vector(document), strict=True))
+                        sum(
+                            a * b for a, b in zip(query_vector, self._vector(document), strict=True)
+                        )
                         + 1.0
                     )
                     / 2.0,

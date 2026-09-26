@@ -310,6 +310,19 @@ class AppSettings(BaseSettings):
         default=False,
         description="Rerank RERANK_CANDIDATES retrieved chunks down to RETRIEVAL_TOP_K (Task 6.5)",
     )
+    # Late interaction (Task 6.6, ADR-012): an architectural capability, off.
+    # ColBERT-style per-token vectors in a Qdrant multivector collection, scored
+    # by MaxSim over the retrieved pool. Routing policy stays experimental.
+    ENABLE_LATE_INTERACTION: bool = Field(
+        default=False,
+        description="Reorder the retrieved pool by ColBERT MaxSim before any reranker",
+    )
+    LATE_INTERACTION_MODEL: str = "jina-colbert-v2"
+    LATE_INTERACTION_DIMENSIONS: int = 128
+    LATE_INTERACTION_COLLECTION: str = "enterprise_rag_chunks_colbert"
+    LATE_INTERACTION_CANDIDATES: int = Field(
+        default=20, ge=1, description="Pool scored by MaxSim; all must be indexed"
+    )
     RERANK_CANDIDATES: int = Field(
         default=20,
         ge=1,

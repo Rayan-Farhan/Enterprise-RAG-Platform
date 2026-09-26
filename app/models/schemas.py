@@ -51,6 +51,21 @@ class EmbeddingsResponse(BaseModel):
     metadata: ModelMetadata
 
 
+class MultiVectorEmbedding(BaseModel):
+    """One text as a matrix: a vector per token (late interaction, ADR-012)."""
+
+    vectors: list[list[float]]
+    index: int
+
+
+class MultiVectorResponse(BaseModel):
+    """Batched multi-vector embeddings."""
+
+    embeddings: list[MultiVectorEmbedding]
+    dimensions: int
+    metadata: ModelMetadata
+
+
 class ScoredDocument(BaseModel):
     """A document scored by a reranker."""
 
