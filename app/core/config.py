@@ -165,6 +165,15 @@ class AppSettings(BaseSettings):
     GENERATION_MAX_CONTEXT_TOKENS: int = 6000
     GENERATION_TEMPERATURE: float = 0.1
     GENERATION_MAX_TOKENS: int = 1500
+    GENERATION_PROVIDER: Literal["", "gemini", "groq"] = Field(
+        default="",
+        description=(
+            "Pin answer generation to one hosted provider, disabling the Gemini->Groq "
+            "fallback. Empty keeps the fallback. Evaluation runs should pin: with the "
+            "fallback, Gemini's 20-per-day cap sends most of a split to Groq, and the "
+            "run measures two models under one name. Ignored by the local profile"
+        ),
+    )
     PROMPT_VERSION_ANSWER: str = "answer_v1"
     PROMPT_VERSION_ABSTENTION: str = "abstention_v1"
     PROMPT_VERSION_CITATION: str = "citation_v1"

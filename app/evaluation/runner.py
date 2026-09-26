@@ -104,6 +104,7 @@ def config_snapshot(settings: AppSettings) -> dict[str, object]:
         "generation_max_context_tokens": settings.GENERATION_MAX_CONTEXT_TOKENS,
         "generation_temperature": settings.GENERATION_TEMPERATURE,
         "generation_max_tokens": settings.GENERATION_MAX_TOKENS,
+        "generation_provider": settings.GENERATION_PROVIDER or None,
         "abstention_min_evidence_chunks": settings.ABSTENTION_MIN_EVIDENCE_CHUNKS,
         "judge_enabled": settings.EVAL_JUDGE_ENABLED,
         "judge_provider": settings.EVAL_JUDGE_PROVIDER,

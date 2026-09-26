@@ -143,6 +143,7 @@ class GenerationService:
             temperature=self.settings.GENERATION_TEMPERATURE,
             max_tokens=self.settings.GENERATION_MAX_TOKENS,
             prompt_version=context.prompt_versions.get("answer"),
+            provider=self.settings.GENERATION_PROVIDER or None,
         )
         gen_latency = (time.perf_counter() - gen_started) * 1000
 
@@ -270,6 +271,7 @@ class GenerationService:
                 temperature=self.settings.GENERATION_TEMPERATURE,
                 max_tokens=300,
                 prompt_version=context.prompt_versions.get("abstention"),
+                provider=self.settings.GENERATION_PROVIDER or None,
             )
             answer = generation.text.strip()
             provider = generation.metadata.provider

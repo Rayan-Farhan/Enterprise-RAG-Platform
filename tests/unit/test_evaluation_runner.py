@@ -149,6 +149,11 @@ class TestConfigSnapshot:
         assert snapshot["chunk_size_tokens"] == configured.CHUNK_SIZE_TOKENS
         assert "secret-key" not in str(snapshot)
 
+    def test_records_the_pinned_generation_provider(self) -> None:
+        assert config_snapshot(settings())["generation_provider"] is None
+        pinned = config_snapshot(settings(GENERATION_PROVIDER="groq"))
+        assert pinned["generation_provider"] == "groq"
+
 
 class TestRun:
     async def test_records_metrics_provenance_and_system_costs(self) -> None:

@@ -81,12 +81,14 @@ class HashEmbeddingGateway:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         prompt_version: str | None = None,
+        provider: str | None = None,
     ) -> GenerationResult:
         self.generate_calls.append(
             {
                 "prompt": prompt,
                 "system_prompt": system_prompt,
                 "prompt_version": prompt_version,
+                "provider": provider,
             }
         )
         return GenerationResult(
@@ -607,6 +609,32 @@ class TestEndToEndAnswer:
         # The draft is kept for diagnosis even though the user never sees it.
         assert "free housing" in result.raw_answer
         assert result.declared_support is SupportState.GROUNDED
+
+    async def test_generation_uses_the_fallback_unless_a_provider_is_pinned(
+        self,
+        session: AsyncSession,
+        settings: AppSettings,
+        retriever: DenseRetriever,
+        gateway: HashEmbeddingGateway,
+    ) -> None:
+        unpinned = GenerationService(
+            retriever=retriever,
+            assembler=ContextAssembler(settings),
+            gateway=gateway,  # type: ignore[arg-type]
+            settings=settings,
+        )
+        await unpinned.answer(query="annual leave", session=session)
+        assert gateway.generate_calls[-1]["provider"] is None
+
+        pinned_settings = settings.model_copy(update={"GENERATION_PROVIDER": "groq"})
+        pinned = GenerationService(
+            retriever=retriever,
+            assembler=ContextAssembler(pinned_settings),
+            gateway=gateway,  # type: ignore[arg-type]
+            settings=pinned_settings,
+        )
+        await pinned.answer(query="annual leave", session=session)
+        assert gateway.generate_calls[-1]["provider"] == "groq"
 
     async def test_evidence_is_untrusted_in_the_prompt_sent_to_the_model(
         self, session: AsyncSession, service: GenerationService, gateway: HashEmbeddingGateway
