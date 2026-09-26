@@ -114,6 +114,13 @@ async def cmd_run(args: argparse.Namespace) -> int:
         version=args.dataset_version,
         unlock_token=args.unlock_test_split,
     )
+    if args.question_ids:
+        wanted = {qid.strip() for qid in args.question_ids.split(",") if qid.strip()}
+        unknown = wanted - {q.question_id for q in questions}
+        if unknown:
+            print(f"Unknown question IDs for this split: {sorted(unknown)}", file=sys.stderr)
+            return 2
+        questions = [q for q in questions if q.question_id in wanted]
     if args.per_type:
         questions = sample_per_type(questions, args.per_type)
     if args.limit:
@@ -168,6 +175,12 @@ async def cmd_run(args: argparse.Namespace) -> int:
             f"\nNOTE: this run was evaluated across {len(run.evaluation_days)} days "
             f"({', '.join(run.evaluation_days)}). A provider can change its served "
             f"model between days; the dates are recorded in the run file."
+        )
+    if run.mixes_generators:
+        mix = ", ".join(f"{name} x{count}" for name, count in run.generator_mix.items())
+        print(
+            f"\nNOTE: more than one generator answered this run ({mix}). The run's "
+            f"generator fields name only the first; each question records its own."
         )
     print(f"\n{run.summary_line()}")
     print(f"Wrote {path}")
@@ -376,6 +389,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="evaluate only the first N questions of each question type (a comparable subset)",
+    )
+    run_parser.add_argument(
+        "--question-ids",
+        default="",
+        help=(
+            "comma-separated question IDs to evaluate. For diagnosing specific "
+            "failures; the result is not comparable to a full-split run"
+        ),
     )
     run_parser.add_argument("--no-judge", dest="judge", action="store_false", help="skip Layer 2")
     run_parser.add_argument(
