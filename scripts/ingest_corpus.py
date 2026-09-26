@@ -29,7 +29,7 @@ from app.db.models.version import DocumentVersion
 from app.db.session import get_session_factory
 from app.ingestion.chunking.service import get_chunking_service
 from app.ingestion.service import get_ingestion_service
-from app.retrieval.indexer import get_chunk_indexer
+from app.retrieval.indexer import get_chunk_indexer, get_lexical_indexer
 
 logger = get_logger("scripts.ingest_corpus")
 
@@ -105,6 +105,13 @@ async def ingest_one(path: Path) -> bool:
             f"{index_result.chunks_skipped} already current, "
             f"{index_result.points_upserted} points upserted"
         )
+
+        if indexer.settings.ENABLE_LEXICAL_INDEXING:
+            async with session_factory() as session:
+                lexical = await get_lexical_indexer().index_version(
+                    session=session, version_id=result.version_id
+                )
+            print(f"  bm25: {lexical.documents_indexed} chunks written to OpenSearch")
     except Exception as exc:  # noqa: BLE001 - one bad file must not abort the corpus
         print(f"  FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
         logger.exception("corpus_ingest_failed", filename=path.name)

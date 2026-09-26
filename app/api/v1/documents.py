@@ -33,7 +33,12 @@ from app.db.repositories.document_repo import DocumentRepository
 from app.db.session import get_db_session
 from app.ingestion.chunking.service import ChunkingService, get_chunking_service
 from app.ingestion.service import IngestionService, get_ingestion_service
-from app.retrieval.indexer import ChunkIndexer, get_chunk_indexer
+from app.retrieval.indexer import (
+    ChunkIndexer,
+    LexicalIndexer,
+    get_chunk_indexer,
+    get_lexical_indexer,
+)
 from app.storage.base import ObjectStorageProtocol
 from app.storage.minio_service import get_storage_service
 
@@ -284,6 +289,7 @@ async def index_document_version(
     session: AsyncSession = Depends(get_db_session),
     chunking_service: ChunkingService = Depends(get_chunking_service),
     indexer: ChunkIndexer = Depends(get_chunk_indexer),
+    lexical_indexer: LexicalIndexer = Depends(get_lexical_indexer),
 ) -> IndexVersionResponse:
     """Chunk a persisted version and index its chunks into the vector store.
 
@@ -299,6 +305,10 @@ async def index_document_version(
         )
 
     indexing = await indexer.index_version(session=session, version_id=version_id, force=force)
+    lexical_indexed = 0
+    if indexer.settings.ENABLE_LEXICAL_INDEXING:
+        lexical = await lexical_indexer.index_version(session=session, version_id=version_id)
+        lexical_indexed = lexical.documents_indexed
 
     return IndexVersionResponse(
         document_id=document_id,
@@ -317,6 +327,7 @@ async def index_document_version(
         embedding_provider=indexing.provider,
         embedding_dimensions=indexing.dimensions,
         rate_limit_waits=indexing.rate_limit_waits,
+        lexical_documents_indexed=lexical_indexed,
         was_noop=chunking.is_noop and indexing.is_noop,
     )
 
