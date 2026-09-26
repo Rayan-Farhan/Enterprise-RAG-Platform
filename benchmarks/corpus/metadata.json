@@ -1,0 +1,67 @@
+{
+  "_comment": [
+    "Curated HR metadata for the benchmark corpus (Task 6.3, master §13).",
+    "In production a document owner supplies these at upload; the corpus was ingested without them.",
+    "Values are controlled slugs so filters match exactly. Apply with: python -m scripts.apply_corpus_metadata",
+    "employee_type is who a document governs: 'staff', 'faculty', or 'all' (both).",
+    "department is the owning office, not the subject: benefit booklets belong to benefits, the faculty handbook to academic_affairs."
+  ],
+  "documents": {
+    "bcbs_dental_booklet_2026.pdf": {
+      "department": "benefits",
+      "policy_type": "dental_benefits",
+      "employee_type": "all",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "dental_plan_at_a_glance_2026.pdf": {
+      "department": "benefits",
+      "policy_type": "dental_benefits",
+      "employee_type": "all",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "bcbs_health_booklet_2026.pdf": {
+      "department": "benefits",
+      "policy_type": "health_benefits",
+      "employee_type": "all",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "health_plan_at_a_glance_2026.pdf": {
+      "department": "benefits",
+      "policy_type": "health_benefits",
+      "employee_type": "all",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "organizational_structure.pdf": {
+      "department": "administration",
+      "policy_type": "org_chart",
+      "employee_type": "all",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "staff_handbook.pdf": {
+      "department": "human_resources",
+      "policy_type": "handbook",
+      "employee_type": "staff",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "una-faculty-handbook-2026-27-initial-version.8-1-26.pdf": {
+      "department": "academic_affairs",
+      "policy_type": "handbook",
+      "employee_type": "faculty",
+      "policy_status": "active",
+      "country": "US"
+    },
+    "university_employee_policy_manual_and_handbook.pdf": {
+      "department": "human_resources",
+      "policy_type": "policy_manual",
+      "employee_type": "all",
+      "policy_status": "active",
+      "country": "US"
+    }
+  }
+}

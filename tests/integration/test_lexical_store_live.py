@@ -177,3 +177,38 @@ class TestSearch:
         store.delete_by_version(str(DOC_B))
 
         assert store.count() == len(CORPUS) - 1
+
+
+class TestMetadataNarrowingLive:
+    """Task 6.3 against real OpenSearch: sync in place, count, and filter."""
+
+    def test_updating_metadata_in_place_changes_what_filters_admit(
+        self, store: OpenSearchLexicalStore
+    ) -> None:
+        store.upsert(payloads())
+        # "military", "due_process" and "leave_general" share DOC_A as their version.
+        updated = store.update_version_fields(
+            str(DOC_A), {"department": "academic_affairs", "employee_type": "faculty"}
+        )
+
+        assert updated == 3
+        assert (
+            store.count(
+                chunking_version=CHUNKING_VERSION,
+                filters=RetrievalFilters(department="academic_affairs"),
+            )
+            == 3
+        )
+
+    def test_employee_type_filters_also_admit_documents_for_everyone(
+        self, store: OpenSearchLexicalStore
+    ) -> None:
+        store.upsert(payloads())
+        store.update_version_fields(str(DOC_A), {"employee_type": "faculty"})
+        store.update_version_fields(str(DOC_B), {"employee_type": "all"})
+
+        faculty = store.count(filters=RetrievalFilters(employee_type="faculty"))
+        staff = store.count(filters=RetrievalFilters(employee_type="staff"))
+
+        assert faculty == len(CORPUS)  # 3 faculty + 1 for everyone
+        assert staff == 1  # only the one for everyone

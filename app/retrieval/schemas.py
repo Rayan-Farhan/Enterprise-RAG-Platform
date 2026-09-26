@@ -50,6 +50,12 @@ class ChunkPayload(BaseModel):
     classification: str = "internal"
 
 
+#: A document whose ``employee_type`` is this value governs every employee type,
+#: so a filter for "faculty" must also match it (Task 6.3). Without this, a
+#: faculty-scoped question would exclude the university-wide policy manual.
+APPLIES_TO_ALL = "all"
+
+
 class RetrievalFilters(BaseModel):
     """Metadata constraints pushed into the vector store query, never applied after."""
 

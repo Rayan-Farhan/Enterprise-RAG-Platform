@@ -92,3 +92,24 @@ class TestNeuralSparse:
         present = store.existing_ids([chunk_id(n) for n in TEXTS])
 
         assert present == {chunk_id("dental"), chunk_id("military")}
+
+    def test_a_metadata_update_keeps_the_encoding_and_runs_no_model(
+        self, store: OpenSearchSparseStore
+    ) -> None:
+        """Task 6.3 rewrites metadata in place; re-encoding 1,937 chunks costs ~10 min."""
+        store.upsert(payloads())
+        before = store.client.get(index=store.index_name, id=chunk_id("dental"))["_source"]
+        version = before["version_id"]
+
+        requests_before = _ml_requests(store)
+        assert store.update_version_fields(version, {"department": "benefits"}) == 1
+        after = store.client.get(index=store.index_name, id=chunk_id("dental"))["_source"]
+
+        assert after["department"] == "benefits"
+        assert after["content_sparse"] == before["content_sparse"]
+        assert _ml_requests(store) == requests_before
+
+
+def _ml_requests(store: OpenSearchSparseStore) -> int:
+    stats = store.client.transport.perform_request("GET", "/_plugins/_ml/stats")
+    return sum(int(node.get("ml_request_count", 0)) for node in stats["nodes"].values())

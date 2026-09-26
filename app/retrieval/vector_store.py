@@ -15,7 +15,7 @@ from qdrant_client.http import models as qmodels
 
 from app.core.config import AppSettings, get_settings
 from app.core.logging import get_logger
-from app.retrieval.schemas import ChunkPayload, RetrievalFilters
+from app.retrieval.schemas import APPLIES_TO_ALL, ChunkPayload, RetrievalFilters
 
 logger = get_logger("app.retrieval.vector_store")
 
@@ -243,12 +243,13 @@ class QdrantVectorStore:
                 "policy_type",
                 "policy_status",
                 "country",
-                "employee_type",
                 "grade",
             ):
                 value = getattr(filters, field_name)
                 if value:
                     match_value(field_name, value)
+            if filters.employee_type:
+                match_any("employee_type", [filters.employee_type, APPLIES_TO_ALL])
             if filters.page_number is not None:
                 match_value("page_number", filters.page_number)
 
@@ -277,6 +278,44 @@ class QdrantVectorStore:
             wait=True,
         )
         logger.info("qdrant_version_points_deleted", version_id=version_id)
+
+    def set_version_payload(self, version_id: str, fields: dict[str, Any]) -> None:
+        """Overwrite metadata fields on every point of a version, keeping vectors.
+
+        Metadata changes after indexing (Task 6.3 curated the corpus after it
+        was embedded). Rewriting the payload in place avoids re-embedding.
+        """
+        self.client.set_payload(
+            collection_name=self.collection_name,
+            payload=fields,
+            points=qmodels.FilterSelector(
+                filter=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="version_id", match=qmodels.MatchValue(value=version_id)
+                        )
+                    ]
+                )
+            ),
+            wait=True,
+        )
+
+    def count_matching(
+        self,
+        filters: RetrievalFilters | None = None,
+        chunking_version: str | None = None,
+        embedding_version: str | None = None,
+    ) -> int:
+        """How many points a filter admits: the candidate pool a search would rank."""
+        if not self.client.collection_exists(self.collection_name):
+            return 0
+        return int(
+            self.client.count(
+                self.collection_name,
+                count_filter=self.build_filter(filters, chunking_version, embedding_version),
+                exact=True,
+            ).count
+        )
 
     def health_check(self) -> bool:
         """Return True when Qdrant answers a trivial request."""

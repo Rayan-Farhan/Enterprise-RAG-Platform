@@ -29,7 +29,7 @@ from opensearchpy.exceptions import NotFoundError
 
 from app.core.config import AppSettings, get_settings
 from app.core.logging import get_logger
-from app.retrieval.schemas import ChunkPayload, RetrievalFilters
+from app.retrieval.schemas import APPLIES_TO_ALL, ChunkPayload, RetrievalFilters
 
 logger = get_logger("app.retrieval.lexical_store")
 
@@ -62,7 +62,6 @@ _FILTER_FIELDS = (
     "policy_type",
     "policy_status",
     "country",
-    "employee_type",
     "grade",
 )
 
@@ -212,6 +211,8 @@ def build_filter(
         value = getattr(filters, field_name)
         if value:
             clauses.append({"term": {field_name: value}})
+    if filters.employee_type:
+        clauses.append({"terms": {"employee_type": [filters.employee_type, APPLIES_TO_ALL]}})
     if filters.page_number is not None:
         clauses.append({"term": {"page_number": filters.page_number}})
     return clauses
@@ -309,12 +310,40 @@ class OpenSearchLexicalStore:
             for hit in response.get("hits", {}).get("hits", [])
         ]
 
-    def count(self, chunking_version: str | None = None) -> int:
-        """Count indexed chunks, optionally for one chunking version."""
+    def count(
+        self,
+        chunking_version: str | None = None,
+        filters: RetrievalFilters | None = None,
+    ) -> int:
+        """Count indexed chunks a filter admits — the candidate pool a search ranks."""
         if not self.client.indices.exists(index=self.index_name):
             return 0
-        body = {"query": {"bool": {"filter": build_filter(None, chunking_version)}}}
+        body = {"query": {"bool": {"filter": build_filter(filters, chunking_version)}}}
         return int(self.client.count(index=self.index_name, body=body)["count"])
+
+    def update_version_fields(self, version_id: str, fields: dict[str, Any]) -> int:
+        """Overwrite metadata fields on every chunk of a version, in place.
+
+        ``pipeline="_none"`` bypasses an index's default pipeline, so on the
+        neural sparse index a metadata change does not re-run the encoder over
+        every chunk. Returns the number of documents updated.
+        """
+        if not self.client.indices.exists(index=self.index_name):
+            return 0
+        response = self.client.update_by_query(
+            index=self.index_name,
+            body={
+                "query": {"term": {"version_id": version_id}},
+                "script": {
+                    "lang": "painless",
+                    "source": "for (e in params.fields.entrySet()) "
+                    "{ ctx._source[e.getKey()] = e.getValue(); }",
+                    "params": {"fields": fields},
+                },
+            },
+            params={"pipeline": "_none", "refresh": "true", "conflicts": "proceed"},
+        )
+        return int(response.get("updated", 0))
 
     def delete_by_version(self, version_id: str) -> None:
         """Remove all documents belonging to a document version."""
