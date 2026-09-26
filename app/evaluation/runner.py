@@ -260,6 +260,27 @@ class ExperimentRunner:
             )
             raise exhausted
 
+        # Isolated refusals — a per-minute limit hit between successes — never
+        # reach the abort threshold, and each refused question is dropped rather
+        # than recorded. Finishing normally would then save a smaller split as a
+        # complete run and discard the checkpoint that could have filled it in.
+        refused = len(questions) - len(results)
+        if refused:
+            logger.warning(
+                "experiment_incomplete_rate_limited",
+                name=name,
+                completed=len(results),
+                total=len(questions),
+            )
+            raise QuotaExhausted(
+                completed=len(results),
+                total=len(questions),
+                detail=(
+                    f"{refused} question(s) were refused by provider rate limits mid-run "
+                    f"and are not recorded; re-running evaluates only those"
+                ),
+            )
+
         run.results = sorted(results, key=lambda r: r.question_id)
 
         run.metrics = self._aggregate(run.results)

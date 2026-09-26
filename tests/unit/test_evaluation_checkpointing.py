@@ -181,6 +181,23 @@ class _StubGeneration:
         raise RuntimeError("ValueError: deliberate non-quota failure")
 
 
+class _IntermittentRateLimit:
+    """Refuses only the listed calls with a per-minute limit; every other call fails
+    for a non-quota reason, which the runner records as a measured failure."""
+
+    def __init__(self, refuse_calls: set[int]) -> None:
+        self.refuse_calls = refuse_calls
+        self.calls = 0
+
+    async def answer(self, query: str, session: Any) -> Any:  # noqa: ANN401 - test double
+        self.calls += 1
+        if self.calls in self.refuse_calls:
+            raise RuntimeError(
+                "groq rate limit reached (HTTP 429): tokens per minute (TPM): Limit 8000"
+            )
+        raise RuntimeError("ValueError: deliberate non-quota failure")
+
+
 class _NullSessionFactory:
     def __call__(self) -> _NullSessionFactory:
         return self
@@ -244,6 +261,32 @@ class TestQuotaAbort:
 
         assert len(seen) == 2
         assert all(not r.failed_on_quota for r in seen)
+
+    @pytest.mark.asyncio
+    async def test_isolated_refusals_leave_the_run_incomplete_not_smaller(self) -> None:
+        # experiment-005 hit 11 scattered TPM refusals, none consecutive, and was
+        # saved as a complete 89-question run with its checkpoint deleted.
+        runner = ExperimentRunner(
+            generation_service=_IntermittentRateLimit(refuse_calls={2, 4}),  # type: ignore[arg-type]
+            judge=_StubJudge(),  # type: ignore[arg-type]
+            settings=_settings(concurrency=1),
+        )
+        seen: list[QuestionResult] = []
+
+        with pytest.raises(QuotaExhausted) as exc_info:
+            await runner.run(
+                name="experiment-001-baseline",
+                questions=[golden(f"dev-factual-{i:03d}") for i in range(1, 7)],
+                session_factory=_NullSessionFactory(),
+                split=DatasetSplit.DEV,
+                dataset_version="v1",
+                judge_enabled=False,
+                on_result=seen.append,
+            )
+
+        assert (exc_info.value.completed, exc_info.value.total) == (4, 6)
+        assert "2 question(s) were refused" in exc_info.value.detail
+        assert len(seen) == 4
 
     @pytest.mark.asyncio
     async def test_resumed_questions_are_not_re_evaluated(self) -> None:
