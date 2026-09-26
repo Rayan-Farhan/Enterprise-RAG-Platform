@@ -109,6 +109,17 @@ async def cmd_run(args: argparse.Namespace) -> int:
         )
         return 2
 
+    judged = args.judge and settings.EVAL_JUDGE_ENABLED and not args.retrieval_only
+    if judged and settings.GENERATION_PROVIDER == settings.EVAL_JUDGE_PROVIDER:
+        print(
+            f"REFUSING TO RUN: GENERATION_PROVIDER and EVAL_JUDGE_PROVIDER are both "
+            f"{settings.GENERATION_PROVIDER!r}, so the judge would score its own "
+            f"provider's answers. Pass --no-judge, or point the judge elsewhere "
+            f"(e.g. EVAL_JUDGE_PROVIDER=gemini for a --per-type subset).",
+            file=sys.stderr,
+        )
+        return 2
+
     questions = load_split(
         split,
         version=args.dataset_version,
