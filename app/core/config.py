@@ -154,9 +154,34 @@ class AppSettings(BaseSettings):
     # Retrieval channel selection (Stage 6, ADR-007/008). Task 6.4 adds "hybrid"
     # (RRF fusion); until then one channel serves generation at a time, which is
     # also what the Task 6.7 single-channel experiments need.
-    RETRIEVAL_MODE: Literal["dense", "bm25", "sparse"] = Field(
+    RETRIEVAL_MODE: Literal["dense", "bm25", "sparse", "hybrid"] = Field(
         default="dense",
         description="Which retrieval channel feeds generation and evaluation",
+    )
+    # Fusion (Task 6.4, ADR-013). RETRIEVAL_MODE=hybrid queries every channel in
+    # HYBRID_CHANNELS for RETRIEVAL_CANDIDATE_LIMIT candidates and fuses them.
+    # "sparse" is skipped while ENABLE_NEURAL_SPARSE is off.
+    HYBRID_CHANNELS: list[Literal["dense", "bm25", "sparse"]] = Field(
+        # A plain default is safe: pydantic copies mutable defaults per instance.
+        default=["dense", "bm25", "sparse"],
+        description="Channels fused in hybrid mode, e.g. '[\"bm25\", \"sparse\"]'",
+    )
+    FUSION_METHOD: Literal["rrf", "weighted"] = Field(
+        default="rrf",
+        description=(
+            "rrf: sum of weight/(k + rank) - scale-free, so unbounded BM25 and cosine "
+            "scores combine without calibration. weighted: sum of weight x min-max "
+            "normalised score, kept for comparison"
+        ),
+    )
+    FUSION_RRF_K: int = Field(
+        default=60,
+        ge=1,
+        description="RRF damping constant; 60 is the value from the original RRF paper",
+    )
+    FUSION_WEIGHTS: dict[str, float] = Field(
+        default_factory=lambda: {"dense": 1.0, "bm25": 1.0, "sparse": 1.0},
+        description="Per-channel weight in either fusion method; a missing channel weighs 1.0",
     )
     ENABLE_METADATA_NARROWING: bool = Field(
         default=False,

@@ -56,23 +56,33 @@ def get_retriever(settings: AppSettings | None = None) -> Retriever:
 
 def _channel_retriever(settings: AppSettings | None) -> Retriever:
     resolved = settings or get_settings()
-    if resolved.RETRIEVAL_MODE == "sparse":
-        if not resolved.ENABLE_NEURAL_SPARSE:
-            # Fail at selection, not at the first query: a sparse run against an
-            # index nobody is populating would measure an empty channel.
-            raise ValueError(
-                "RETRIEVAL_MODE=sparse requires ENABLE_NEURAL_SPARSE=true and the "
-                "models from scripts/setup_neural_sparse.py"
-            )
+    if resolved.RETRIEVAL_MODE == "hybrid":
+        from app.retrieval.fusion import FusionRetriever
+
+        return FusionRetriever(settings=resolved)
+    if resolved.RETRIEVAL_MODE == "sparse" and not resolved.ENABLE_NEURAL_SPARSE:
+        # Fail at selection, not at the first query: a sparse run against an
+        # index nobody is populating would measure an empty channel.
+        raise ValueError(
+            "RETRIEVAL_MODE=sparse requires ENABLE_NEURAL_SPARSE=true and the "
+            "models from scripts/setup_neural_sparse.py"
+        )
+    # Without explicit settings, reuse the process-wide singleton channels.
+    return build_channel(resolved.RETRIEVAL_MODE, settings)
+
+
+def build_channel(name: str, settings: AppSettings | None) -> Retriever:
+    """One named channel. Explicit settings build a fresh instance from them."""
+    if name == "sparse":
         from app.retrieval.sparse import SparseRetriever, get_sparse_retriever
 
-        return get_sparse_retriever() if settings is None else SparseRetriever(settings=resolved)
-
-    if resolved.RETRIEVAL_MODE == "bm25":
+        return get_sparse_retriever() if settings is None else SparseRetriever(settings=settings)
+    if name == "bm25":
         from app.retrieval.lexical import LexicalRetriever, get_lexical_retriever
 
-        return get_lexical_retriever() if settings is None else LexicalRetriever(settings=resolved)
+        return get_lexical_retriever() if settings is None else LexicalRetriever(settings=settings)
+    if name == "dense":
+        from app.retrieval.dense import DenseRetriever, get_dense_retriever
 
-    from app.retrieval.dense import DenseRetriever, get_dense_retriever
-
-    return get_dense_retriever() if settings is None else DenseRetriever(settings=resolved)
+        return get_dense_retriever() if settings is None else DenseRetriever(settings=settings)
+    raise ValueError(f"Unknown retrieval channel '{name}'")
