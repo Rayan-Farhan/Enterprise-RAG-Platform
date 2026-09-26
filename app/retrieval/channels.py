@@ -19,8 +19,12 @@ from app.retrieval.schemas import RetrievalFilters, RetrievalResult
 class Retriever(Protocol):
     """Anything that turns a query into ranked, provenance-bearing chunks."""
 
-    channel: str
     settings: AppSettings
+
+    @property
+    def channel(self) -> str:
+        """The channel name recorded on every hit and in the config snapshot."""
+        ...
 
     async def retrieve(
         self,
@@ -31,12 +35,26 @@ class Retriever(Protocol):
         min_score: float | None = None,
     ) -> RetrievalResult: ...
 
+    async def candidate_count(self, filters: RetrievalFilters | None) -> int:
+        """How many chunks ``filters`` admit: the pool this channel would rank."""
+        ...
+
 
 def get_retriever(settings: AppSettings | None = None) -> Retriever:
-    """Return the retriever ``RETRIEVAL_MODE`` selects.
+    """Return the retriever ``RETRIEVAL_MODE`` selects, narrowed if enabled.
 
     Imported lazily so selecting one channel never constructs the other's client.
     """
+    channel = _channel_retriever(settings)
+    resolved = settings or get_settings()
+    if resolved.ENABLE_METADATA_NARROWING:
+        from app.retrieval.narrowing import NarrowingRetriever
+
+        return NarrowingRetriever(channel, settings=resolved)
+    return channel
+
+
+def _channel_retriever(settings: AppSettings | None) -> Retriever:
     resolved = settings or get_settings()
     if resolved.RETRIEVAL_MODE == "sparse":
         if not resolved.ENABLE_NEURAL_SPARSE:

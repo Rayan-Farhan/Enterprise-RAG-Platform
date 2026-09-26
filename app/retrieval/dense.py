@@ -97,6 +97,14 @@ class DenseRetriever:
             retrieval_config=self.config_snapshot(k, threshold, filters),
         )
 
+    async def candidate_count(self, filters: RetrievalFilters | None) -> int:
+        """Points the filter admits under the current chunking and embedding versions."""
+        return self.vector_store.count_matching(
+            filters=filters,
+            chunking_version=self.settings.CHUNKING_VERSION,
+            embedding_version=self.settings.effective_embedding_version,
+        )
+
     def config_snapshot(
         self,
         top_k: int,

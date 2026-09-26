@@ -48,6 +48,10 @@ class QuestionResult(BaseModel):
         default="",
         description="Generator output before citation validation; differs from `answer` when rejected",
     )
+    retrieval_trace: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata narrowing decisions for this question (Task 6.3), when enabled",
+    )
     generator_provider: str | None = Field(
         default=None,
         description="Provider that actually answered; differs from the run's when Gemini fell back",

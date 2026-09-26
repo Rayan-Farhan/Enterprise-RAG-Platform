@@ -89,6 +89,12 @@ class LexicalRetriever:
             retrieval_config=self.config_snapshot(k, filters),
         )
 
+    async def candidate_count(self, filters: RetrievalFilters | None) -> int:
+        """Chunks the filter admits under the current chunking version."""
+        return self.lexical_store.count(
+            chunking_version=self.settings.CHUNKING_VERSION, filters=filters
+        )
+
     def config_snapshot(
         self,
         top_k: int,

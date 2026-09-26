@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "Query terms that imply a metadata constraint (Task 6.3, master §13).",
+    "Each rule: when any pattern matches the question (case-insensitive, word-bounded regex), the question is scoped to field=value.",
+    "Rules are deliberately conservative. A wrong constraint silently removes the right evidence, while a missing one only costs precision.",
+    "Two different values for one field in the same question (\"dental and health\") cancel narrowing on that field.",
+    "Match plurals ('health plans'): a missed term fails to cancel a conflicting constraint, and the question is wrongly narrowed.",
+    "Values must match benchmarks/corpus/metadata.json. Bump 'version' on any change: it is recorded in every experiment."
+  ],
+  "version": "v2",
+  "rules": [
+    {
+      "field": "policy_type",
+      "value": "dental_benefits",
+      "patterns": ["\\bdental\\b", "\\bdentists?\\b", "\\borthodont\\w*", "\\bteeth\\b", "\\btooth\\b", "\\bsealants?\\b"]
+    },
+    {
+      "field": "policy_type",
+      "value": "health_benefits",
+      "patterns": [
+        "\\bhealth (?:plans?|insurance|benefits?|booklets?)\\b",
+        "\\bmedical (?:plans?|insurance|benefits?)\\b",
+        "\\bprescriptions?\\b",
+        "\\bpharmacy\\b",
+        "\\bhospital\\w*",
+        "\\bemergency room\\b",
+        "\\bprecertification\\b"
+      ]
+    },
+    {
+      "field": "policy_type",
+      "value": "org_chart",
+      "patterns": ["\\borgani[sz]ational (?:charts?|structures?)\\b", "\\breports? directly to the president\\b"]
+    },
+    {
+      "field": "policy_type",
+      "value": "policy_manual",
+      "patterns": ["\\bpolicy manuals?\\b"]
+    },
+    {
+      "field": "policy_type",
+      "value": "handbook",
+      "patterns": ["\\bhandbooks?\\b"]
+    },
+    {
+      "field": "employee_type",
+      "value": "faculty",
+      "patterns": ["\\bfaculty\\b", "\\btenure\\w*", "\\bprofessors?\\b", "\\badjuncts?\\b"]
+    },
+    {
+      "field": "employee_type",
+      "value": "staff",
+      "patterns": ["\\bstaff\\b"]
+    },
+    {
+      "field": "department",
+      "value": "academic_affairs",
+      "patterns": ["\\bacademic affairs\\b", "\\bprovost\\b"]
+    },
+    {
+      "field": "department",
+      "value": "human_resources",
+      "patterns": ["\\bhuman resources\\b", "(?-i:\\bHR\\b)"]
+    }
+  ]
+}

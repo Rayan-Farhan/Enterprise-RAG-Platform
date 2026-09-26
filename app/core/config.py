@@ -158,6 +158,13 @@ class AppSettings(BaseSettings):
         default="dense",
         description="Which retrieval channel feeds generation and evaluation",
     )
+    ENABLE_METADATA_NARROWING: bool = Field(
+        default=False,
+        description=(
+            "Infer metadata constraints from the question (Task 6.3) and search only the "
+            "chunks they admit, falling back to the full corpus if that finds nothing"
+        ),
+    )
     ENABLE_LEXICAL_INDEXING: bool = Field(
         default=True,
         description=(

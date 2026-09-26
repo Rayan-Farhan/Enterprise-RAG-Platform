@@ -98,6 +98,7 @@ def config_snapshot(settings: AppSettings) -> dict[str, object]:
         "embedding_version": settings.effective_embedding_version,
         "embedding_dimensions": settings.EMBEDDING_DIMENSIONS,
         "retrieval_mode": settings.RETRIEVAL_MODE,
+        "metadata_narrowing": settings.ENABLE_METADATA_NARROWING,
         "retrieval_top_k": settings.RETRIEVAL_TOP_K,
         "retrieval_min_score": settings.RETRIEVAL_MIN_SCORE,
         "retrieval_candidate_limit": settings.RETRIEVAL_CANDIDATE_LIMIT,
@@ -442,6 +443,7 @@ class ExperimentRunner:
         result.latency_ms = (time.perf_counter() - started) * 1000
         result.retrieval_latency_ms = retrieval.latency_ms
         result.evidence_tokens = context.evidence_tokens
+        result.retrieval_trace = dict(retrieval.retrieval_config.get("narrowing") or {})
 
         result.retrieval_metrics = retrieval_metrics.compute_case_metrics(
             retrieval_metrics.RetrievalCase(
@@ -472,6 +474,7 @@ class ExperimentRunner:
         result.declared_support = str(answer.declared_support) if answer.declared_support else None
         result.raw_answer = answer.raw_answer
         result.generator_provider = answer.provider
+        result.retrieval_trace = dict(answer.retrieval_config.get("narrowing") or {})
         result.generator_model = answer.model_name
         result.retrieved_chunk_ids = list(answer.retrieved_chunk_ids)
         result.retrieved_element_ids = sorted(
