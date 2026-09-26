@@ -186,3 +186,32 @@ class TestProbeIsolation:
         assert report.status is DependencyStatus.HEALTHY
         assert report.error is None
         assert report.latency_ms is not None
+
+
+class TestRequirementFollowsRetrievalMode:
+    """OpenSearch is required exactly when retrieval cannot answer without it."""
+
+    @pytest.mark.parametrize(
+        ("mode", "required"),
+        [("sparse", True), ("bm25", True), ("hybrid", False), ("dense", False)],
+    )
+    def test_opensearch_requirement_by_mode(self, mode: str, required: bool) -> None:
+        from app.core.config import AppSettings
+
+        plan = {
+            name: is_required
+            for name, is_required, _ in health_module.probe_plan(
+                AppSettings(APP_ENV="testing", RETRIEVAL_MODE=mode)
+            )
+        }
+
+        assert plan["opensearch"] is required
+        assert plan["postgres"] and plan["qdrant"] and plan["minio"]
+        assert not plan["redis"] and not plan["rabbitmq"]
+
+    def test_the_production_default_requires_opensearch(self) -> None:
+        from app.core.config import AppSettings
+
+        settings = AppSettings(APP_ENV="testing")
+        plan = {name: req for name, req, _ in health_module.probe_plan(settings)}
+        assert plan["opensearch"] is True

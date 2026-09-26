@@ -73,7 +73,9 @@ class TestQuery:
 
 class TestToggle:
     def test_sparse_mode_is_refused_while_the_channel_is_disabled(self) -> None:
-        settings = AppSettings(APP_ENV="testing", RETRIEVAL_MODE="sparse")
+        settings = AppSettings(
+            APP_ENV="testing", RETRIEVAL_MODE="sparse", ENABLE_NEURAL_SPARSE=False
+        )
 
         with pytest.raises(ValueError, match="ENABLE_NEURAL_SPARSE"):
             get_retriever(settings)
@@ -87,8 +89,8 @@ class TestToggle:
         assert isinstance(retriever, SparseRetriever)
         assert retriever.channel == "neural_sparse"
 
-    def test_the_channel_is_off_by_default(self) -> None:
-        assert AppSettings(APP_ENV="testing").ENABLE_NEURAL_SPARSE is False
+    def test_the_channel_is_on_by_default(self) -> None:
+        assert AppSettings(APP_ENV="testing").ENABLE_NEURAL_SPARSE is True
 
     def test_config_snapshot_names_the_index_and_both_models(self) -> None:
         settings = AppSettings(APP_ENV="testing", ENABLE_NEURAL_SPARSE=True)

@@ -134,9 +134,8 @@ async def _check_redis() -> None:
 
 def _opensearch_probe() -> None:
     # The synchronous client is used deliberately: `AsyncOpenSearch` requires the
-    # optional `opensearch-py[async]` extra (aiohttp), and OpenSearch is not on the
-    # request path until Stage 6. Running the sync client in a thread avoids taking
-    # that dependency for a health probe.
+    # optional `opensearch-py[async]` extra (aiohttp). Running the sync client in a
+    # thread avoids taking that dependency for a health probe.
     from opensearchpy import OpenSearch
 
     settings = get_settings()
@@ -165,10 +164,11 @@ async def _check_rabbitmq() -> None:
     await writer.wait_closed()
 
 
-# Required set reflects what the Stage 3 request path genuinely cannot serve
-# without: PostgreSQL (source of truth), Qdrant (the only retrieval channel), and
-# MinIO (source documents). Redis, RabbitMQ, and OpenSearch are not yet on the
-# request path — they become required in Stages 11, 7, and 6 respectively.
+# Required set reflects what the request path genuinely cannot serve without:
+# PostgreSQL (source of truth), Qdrant (dense vectors; also written on every
+# ingest), and MinIO (source documents). Redis and RabbitMQ are not yet on the
+# request path — they become required in Stages 11 and 7. OpenSearch's entry is
+# the static default; `probe_plan` makes it required when retrieval depends on it.
 _PROBES: tuple[tuple[str, bool, Callable[[], Awaitable[None]]], ...] = (
     ("postgres", True, _check_postgres),
     ("qdrant", True, _check_qdrant),
@@ -179,11 +179,32 @@ _PROBES: tuple[tuple[str, bool, Callable[[], Awaitable[None]]], ...] = (
 )
 
 
+#: Retrieval modes that cannot answer without OpenSearch. ``hybrid`` is absent
+#: on purpose: fusion drops a failed channel and serves from the rest (Task 6.4).
+OPENSEARCH_ONLY_MODES = frozenset({"sparse", "bm25"})
+
+
+def probe_plan(
+    settings: AppSettings,
+) -> tuple[tuple[str, bool, Callable[[], Awaitable[None]]], ...]:
+    """The probes with requirement set for this configuration.
+
+    Since Task 6.7 made neural sparse the default channel, an OpenSearch outage
+    means no retrieval at all. Readiness must then fail and take the instance
+    out of rotation rather than report ``degraded`` while every answer fails.
+    """
+    opensearch_required = settings.RETRIEVAL_MODE in OPENSEARCH_ONLY_MODES
+    return tuple(
+        (name, opensearch_required if name == "opensearch" else required, check)
+        for name, required, check in _PROBES
+    )
+
+
 async def check_dependencies(settings: AppSettings | None = None) -> list[DependencyReport]:
     """Probe every dependency concurrently and return their reports."""
-    _ = settings or get_settings()
+    resolved = settings or get_settings()
     reports = await asyncio.gather(
-        *(_probe(name, required, check) for name, required, check in _PROBES)
+        *(_probe(name, required, check) for name, required, check in probe_plan(resolved))
     )
 
     unhealthy = [r.name for r in reports if r.status is not DependencyStatus.HEALTHY]

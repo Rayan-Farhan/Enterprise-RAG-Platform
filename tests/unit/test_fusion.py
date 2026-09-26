@@ -183,7 +183,9 @@ class TestFusionRetriever:
 
 class TestSelection:
     def test_hybrid_skips_sparse_while_it_is_disabled(self) -> None:
-        retriever = get_retriever(AppSettings(APP_ENV="testing", RETRIEVAL_MODE="hybrid"))
+        retriever = get_retriever(
+            AppSettings(APP_ENV="testing", RETRIEVAL_MODE="hybrid", ENABLE_NEURAL_SPARSE=False)
+        )
 
         assert isinstance(retriever, FusionRetriever)
         assert list(retriever.channels) == ["dense", "bm25"]
@@ -202,7 +204,12 @@ class TestSelection:
     def test_no_active_channel_is_a_configuration_error(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
             get_retriever(
-                AppSettings(APP_ENV="testing", RETRIEVAL_MODE="hybrid", HYBRID_CHANNELS=["sparse"])
+                AppSettings(
+                    APP_ENV="testing",
+                    RETRIEVAL_MODE="hybrid",
+                    HYBRID_CHANNELS=["sparse"],
+                    ENABLE_NEURAL_SPARSE=False,
+                )
             )
 
     def test_narrowing_wraps_the_fused_retriever(self) -> None:

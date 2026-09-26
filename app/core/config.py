@@ -154,8 +154,14 @@ class AppSettings(BaseSettings):
     # Retrieval channel selection (Stage 6, ADR-007/008). Task 6.4 adds "hybrid"
     # (RRF fusion); until then one channel serves generation at a time, which is
     # also what the Task 6.7 single-channel experiments need.
+    # Task 6.7 set the production default to neural sparse. Dense alone was the
+    # worst channel on both dev and validation splits (recall@10 0.54/0.56 vs
+    # 0.81/0.82). Sparse, BM25, hybrid and the reranked variants tied on the
+    # held-out split; sparse was chosen for quality per second - 0.26 s p50 and
+    # no per-query model cost, against ~1.2-2.3 s for the reranked paths. It has
+    # no fallback channel: "hybrid" survives a channel outage if that matters more.
     RETRIEVAL_MODE: Literal["dense", "bm25", "sparse", "hybrid"] = Field(
-        default="dense",
+        default="sparse",
         description="Which retrieval channel feeds generation and evaluation",
     )
     # Fusion (Task 6.4, ADR-013). RETRIEVAL_MODE=hybrid queries every channel in
@@ -201,10 +207,11 @@ class AppSettings(BaseSettings):
     # Neural sparse retrieval (Stage 6, Task 6.2, ADR-008). Runs inside OpenSearch
     # in "doc-only" mode: documents are expanded by a sparse encoder at index
     # time through an ingest pipeline, and queries are only tokenized, so search
-    # needs no model inference. Off by default: it needs the ML models deployed
+    # needs no model inference. On by default since Task 6.7 made it the
+    # production channel; it needs the ML models deployed
     # (scripts/setup_neural_sparse.py) and ~1 GB of OpenSearch native memory.
     ENABLE_NEURAL_SPARSE: bool = Field(
-        default=False,
+        default=True,
         description="Index chunks into the neural sparse index and allow RETRIEVAL_MODE=sparse",
     )
     SPARSE_INDEX_NAME: str = "enterprise_rag_chunks_sparse"

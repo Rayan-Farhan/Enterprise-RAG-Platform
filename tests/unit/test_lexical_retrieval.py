@@ -149,5 +149,8 @@ class TestChannelSelection:
         retriever = get_retriever(AppSettings(APP_ENV="testing", RETRIEVAL_MODE=mode))
         assert isinstance(retriever, expected)
 
-    def test_dense_stays_the_default(self) -> None:
-        assert AppSettings(APP_ENV="testing").RETRIEVAL_MODE == "dense"
+    def test_neural_sparse_is_the_production_default(self) -> None:
+        """Task 6.7's decision; see the RETRIEVAL_MODE comment in config."""
+        settings = AppSettings(APP_ENV="testing")
+        assert settings.RETRIEVAL_MODE == "sparse"
+        assert settings.ENABLE_NEURAL_SPARSE is True
