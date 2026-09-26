@@ -352,9 +352,17 @@ def get_model_gateway(profile: str | None = None) -> ModelGateway:
 
     Controlled by INFERENCE_PROFILE ('hosted', 'local', or 'stub'). This is the only
     place that decides which provider classes are constructed — application code
-    never learns which profile is active (ADR-046, ADR-051).
+    never learns which profile is active (ADR-046, ADR-051). Cached per profile.
     """
-    settings = get_settings()
+    return build_model_gateway(get_settings(), profile)
+
+
+def build_model_gateway(settings: AppSettings, profile: str | None = None) -> ModelGateway:
+    """Construct an uncached gateway from explicit settings.
+
+    For callers holding their own settings — a key or model override must reach
+    the providers, which the cached process-wide gateway would ignore.
+    """
     active_profile = profile or settings.INFERENCE_PROFILE
 
     if active_profile == "hosted":
@@ -365,6 +373,5 @@ def get_model_gateway(profile: str | None = None) -> ModelGateway:
         return StubModelGateway(settings)
     else:
         raise ValueError(
-            f"Unknown INFERENCE_PROFILE: {active_profile}. "
-            f"Must be 'hosted', 'local', or 'stub'."
+            f"Unknown INFERENCE_PROFILE: {active_profile}. Must be 'hosted', 'local', or 'stub'."
         )
