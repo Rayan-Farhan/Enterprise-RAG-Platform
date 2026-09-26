@@ -29,6 +29,18 @@ _SUPPORT_LINE_RE = re.compile(
     r"^\s*SUPPORT\s*:\s*(grounded|partial|insufficient)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+# Structure that only exists in the assembled context. None of it can appear in
+# a legitimate answer, so its presence means the model was talked into dumping
+# its context (dev-adversarial-003 did exactly this on the Groq fallback).
+_CONTEXT_STRUCTURE_RE = re.compile(
+    r"(?:BEGIN|END)\s+EVIDENCE|^\s*\[\d+\]\s+document=",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Twelve consecutive words of the system prompt appearing in the answer is a leak,
+# not a coincidence. Word n-grams rather than sentences because the prompt is
+# hard-wrapped and a leak is usually a fragment, not a clean sentence.
+_INSTRUCTION_LEAK_NGRAM = 12
+_WORD_RE = re.compile(r"[a-z0-9']+")
 # Sentences that assert something factual and therefore require a citation.
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -53,6 +65,7 @@ class CitationValidationResult:
     uncited_sentences: list[str] = field(default_factory=list)
     rejected: bool = False
     rejection_reason: str | None = None
+    context_leak: bool = False
 
     @property
     def is_valid(self) -> bool:
@@ -128,9 +141,39 @@ class CitationValidator:
                 declared=str(declared_support) if declared_support else None,
             )
 
+        # Checked last so it overrides every other outcome: an answer that leaks
+        # the context is withheld whether or not its citations resolve. This is
+        # the model-independent backstop to the prompt's "never reproduce your
+        # context" rule, which a weaker fallback model does not reliably follow.
+        if self._leaks_context(result.answer, context):
+            result.rejected = True
+            result.context_leak = True
+            result.rejection_reason = "Answer reproduces the assembled context or instructions"
+            logger.warning("answer_rejected_context_leak")
+
         return result
 
     # ---- internals -----------------------------------------------------
+
+    @staticmethod
+    def _leaks_context(answer: str, context: AssembledContext) -> bool:
+        """True when the answer contains context structure or instruction text."""
+        if _CONTEXT_STRUCTURE_RE.search(answer):
+            return True
+        if not context.has_evidence:
+            # The abstention prompt prescribes its refusal wording ("the HR
+            # knowledge base does not contain an answer…"), so echoing it is the
+            # intended output, and with no evidence there is nothing to leak.
+            return False
+        instructions = CitationValidator._ngrams(context.system_prompt)
+        return not instructions.isdisjoint(CitationValidator._ngrams(answer))
+
+    @staticmethod
+    def _ngrams(text: str) -> set[tuple[str, ...]]:
+        """Lower-cased word n-grams, ignoring punctuation and markdown."""
+        words = _WORD_RE.findall(text.lower())
+        n = _INSTRUCTION_LEAK_NGRAM
+        return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
 
     @staticmethod
     def _marker_sort_key(marker: str) -> tuple[int, str]:

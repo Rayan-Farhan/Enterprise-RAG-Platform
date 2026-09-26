@@ -190,7 +190,11 @@ class GenerationService:
             result.support = SupportState.INSUFFICIENT
             result.abstained = True
             result.citations = []
-            result.degradations.append("answer_rejected_citation_validation")
+            result.degradations.append(
+                "answer_rejected_context_leak"
+                if validated.context_leak
+                else "answer_rejected_citation_validation"
+            )
 
         logger.info(
             "answer_generated",
