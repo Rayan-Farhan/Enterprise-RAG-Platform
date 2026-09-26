@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import AppSettings, get_settings
 from app.core.logging import get_logger
 from app.db.models.chunk import Chunk
-from app.db.repositories.chunk_repo import ChunkRepository
 from app.retrieval.embedding import EmbeddingService, get_embedding_service
+from app.retrieval.hydration import chunk_to_retrieved, hydrate_ranked
 from app.retrieval.schemas import (
     RetrievalFilters,
     RetrievalResult,
@@ -122,85 +122,19 @@ class DenseRetriever:
         hits: list[VectorHit],
     ) -> list[RetrievedChunk]:
         """Replace vector payloads with authoritative PostgreSQL records."""
-        if not hits:
-            return []
-
-        ordered_ids: list[uuid.UUID] = []
-        scores: dict[uuid.UUID, float] = {}
+        ranked: list[tuple[uuid.UUID, float]] = []
         for hit in hits:
             raw_id = hit.payload.get("chunk_id")
             if not raw_id:
                 continue
             try:
-                chunk_id = uuid.UUID(str(raw_id))
+                ranked.append((uuid.UUID(str(raw_id)), hit.score))
             except ValueError:
                 logger.warning("dense_hit_invalid_chunk_id", point_id=hit.point_id)
-                continue
-            ordered_ids.append(chunk_id)
-            scores[chunk_id] = hit.score
-
-        repo = ChunkRepository(session)
-        found = {chunk.id: chunk for chunk in await repo.get_many_by_ids(ordered_ids)}
-
-        # A hit with no row in PostgreSQL means the index is ahead of the database
-        # — a real inconsistency worth logging rather than silently dropping.
-        missing = [cid for cid in ordered_ids if cid not in found]
-        if missing:
-            logger.warning(
-                "dense_hits_missing_in_postgres",
-                count=len(missing),
-                chunk_ids=[str(c) for c in missing[:10]],
-            )
-
-        results: list[RetrievedChunk] = []
-        for rank, chunk_id in enumerate(
-            (cid for cid in ordered_ids if cid in found), start=1
-        ):
-            results.append(
-                self._from_model(found[chunk_id], scores[chunk_id], rank)
-            )
-        return results
+        return await hydrate_ranked(session, ranked, self.channel)
 
     def _from_model(self, chunk: Chunk, score: float, rank: int) -> RetrievedChunk:
-        version = chunk.version
-        record = getattr(version, "metadata_record", None) if version else None
-
-        return RetrievedChunk(
-            chunk_id=chunk.id,
-            document_id=chunk.document_id,
-            version_id=chunk.version_id,
-            content=chunk.content,
-            score=score,
-            channel=self.channel,
-            rank=rank,
-            chunk_index=chunk.chunk_index,
-            chunk_type=chunk.chunk_type,
-            token_count=chunk.token_count,
-            page_number=chunk.primary_page_number,
-            page_span=list(chunk.page_span or []),
-            section_path=list(chunk.section_path or []),
-            element_ids=list(chunk.element_ids or []),
-            bounding_box=chunk.bounding_box,
-            document_title=chunk.document.title if chunk.document else None,
-            version_number=version.version_number if version else None,
-            metadata={
-                "department": getattr(record, "department", None),
-                "policy_type": getattr(record, "policy_type", None),
-                "policy_status": getattr(record, "policy_status", None),
-                "effective_from": (
-                    version.effective_from.isoformat()
-                    if version is not None and version.effective_from is not None
-                    else None
-                ),
-                # Task 5.2 reads this to expand a matched leaf into its section.
-                # Carried as metadata rather than a typed field so the retrieval
-                # contract does not assume a hierarchy that only one chunking
-                # strategy produces.
-                "parent_chunk_id": (
-                    str(chunk.parent_chunk_id) if chunk.parent_chunk_id else None
-                ),
-            },
-        )
+        return chunk_to_retrieved(chunk, score, rank, self.channel)
 
     def _from_payload(self, hit: VectorHit, rank: int) -> RetrievedChunk:
         """Build a result straight from the vector payload (debug path only)."""
