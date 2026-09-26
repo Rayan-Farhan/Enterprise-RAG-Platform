@@ -48,7 +48,12 @@ def get_retriever(settings: AppSettings | None = None) -> Retriever:
     channel = _channel_retriever(settings)
     resolved = settings or get_settings()
     # Order matters: narrowing's filters must reach the channel the reranker
-    # draws its pool from, so reranking sits between them.
+    # draws its pool from, so reranking sits between them. Late interaction
+    # (blueprint §17) reorders the channel's pool before any cross-encoder.
+    if resolved.ENABLE_LATE_INTERACTION:
+        from app.retrieval.late_interaction import LateInteractionRetriever
+
+        channel = LateInteractionRetriever(channel, settings=resolved)
     if resolved.ENABLE_RERANKING:
         from app.retrieval.reranking import RerankingRetriever
 

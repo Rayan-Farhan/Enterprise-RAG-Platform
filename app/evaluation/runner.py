@@ -103,6 +103,7 @@ def config_snapshot(settings: AppSettings) -> dict[str, object]:
         "retrieval_min_score": settings.RETRIEVAL_MIN_SCORE,
         "retrieval_candidate_limit": settings.RETRIEVAL_CANDIDATE_LIMIT,
         "reranking_enabled": settings.ENABLE_RERANKING,
+        "late_interaction_enabled": settings.ENABLE_LATE_INTERACTION,
         "rerank_candidates": settings.RERANK_CANDIDATES if settings.ENABLE_RERANKING else None,
         "generation_max_context_tokens": settings.GENERATION_MAX_CONTEXT_TOKENS,
         "generation_temperature": settings.GENERATION_TEMPERATURE,
