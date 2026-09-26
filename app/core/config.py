@@ -174,7 +174,10 @@ class AppSettings(BaseSettings):
             "run measures two models under one name. Ignored by the local profile"
         ),
     )
-    PROMPT_VERSION_ANSWER: str = "answer_v1"
+    # answer_v2 (2026-09-26): adds refusal rules for context dumps, fabricated
+    # "official" policy text, and user-supplied premises, and pins the citation
+    # syntax to [n]. Driven by experiment-005's adversarial failures.
+    PROMPT_VERSION_ANSWER: str = "answer_v2"
     PROMPT_VERSION_ABSTENTION: str = "abstention_v1"
     PROMPT_VERSION_CITATION: str = "citation_v1"
     ABSTENTION_MIN_EVIDENCE_CHUNKS: int = 1

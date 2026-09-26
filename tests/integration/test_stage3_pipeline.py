@@ -544,7 +544,7 @@ class TestEndToEndAnswer:
 
         assert result.model_name == "fake-llm"
         assert result.model_version == "v1"
-        assert result.prompt_versions["answer"] == "answer_v1"
+        assert result.prompt_versions["answer"] == "answer_v2"
         assert result.prompt_versions["citation"] == "citation_v1"
         assert len(result.prompt_hashes["answer"]) == 64
         assert result.retrieval_config["embedding_version"] == "test-embed-v1"
@@ -653,7 +653,7 @@ class TestEndToEndAnswer:
         assert "21 days of paid annual leave" in prompt
         assert "21 days of paid annual leave" not in system_prompt
         assert "Staff Handbook 2026" not in system_prompt
-        assert call["prompt_version"] == "answer_v1"
+        assert call["prompt_version"] == "answer_v2"
 
     async def test_streaming_emits_ordered_events(
         self, session: AsyncSession, service: GenerationService
