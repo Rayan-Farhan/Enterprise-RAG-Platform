@@ -306,7 +306,18 @@ class AppSettings(BaseSettings):
     )
 
     # Feature Flags (Master Plan §2)
-    ENABLE_RERANKING: bool = False
+    ENABLE_RERANKING: bool = Field(
+        default=False,
+        description="Rerank RERANK_CANDIDATES retrieved chunks down to RETRIEVAL_TOP_K (Task 6.5)",
+    )
+    RERANK_CANDIDATES: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Pool handed to the reranker. Wider finds more, but reranker cost and "
+            "latency grow linearly with it (~350 tokens per chunk on the hosted tier)"
+        ),
+    )
     ENABLE_VISUAL_RETRIEVAL: bool = False
     ENABLE_QUERY_DECOMPOSITION: bool = False
     ENABLE_MULTI_HOP: bool = False

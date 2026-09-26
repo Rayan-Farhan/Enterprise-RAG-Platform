@@ -47,6 +47,12 @@ def get_retriever(settings: AppSettings | None = None) -> Retriever:
     """
     channel = _channel_retriever(settings)
     resolved = settings or get_settings()
+    # Order matters: narrowing's filters must reach the channel the reranker
+    # draws its pool from, so reranking sits between them.
+    if resolved.ENABLE_RERANKING:
+        from app.retrieval.reranking import RerankingRetriever
+
+        channel = RerankingRetriever(channel, settings=resolved)
     if resolved.ENABLE_METADATA_NARROWING:
         from app.retrieval.narrowing import NarrowingRetriever
 
