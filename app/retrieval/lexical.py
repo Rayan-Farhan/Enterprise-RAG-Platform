@@ -36,7 +36,11 @@ class LexicalRetriever:
         settings: AppSettings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self.lexical_store = lexical_store or get_lexical_store()
+        # Explicit settings get a store built from them (an index name override
+        # must reach the store), otherwise the process-wide singleton.
+        self.lexical_store = lexical_store or (
+            OpenSearchLexicalStore(settings=settings) if settings else get_lexical_store()
+        )
 
     async def retrieve(
         self,
@@ -69,7 +73,7 @@ class LexicalRetriever:
 
         latency_ms = (time.perf_counter() - started) * 1000
         logger.info(
-            "bm25_retrieval_complete",
+            f"{self.channel}_retrieval_complete",
             query_chars=len(query),
             hits=len(chunks),
             top_k=k,
@@ -110,7 +114,7 @@ class LexicalRetriever:
             try:
                 ranked.append((uuid.UUID(hit.chunk_id), hit.score))
             except ValueError:
-                logger.warning("bm25_hit_invalid_chunk_id", chunk_id=hit.chunk_id)
+                logger.warning("index_hit_invalid_chunk_id", chunk_id=hit.chunk_id)
         return ranked
 
     def _from_payload(self, hit: LexicalHit, rank: int) -> RetrievedChunk:
