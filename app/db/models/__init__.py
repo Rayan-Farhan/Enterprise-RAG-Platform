@@ -9,6 +9,7 @@ from app.db.models.evaluation import (
     HumanReviewVerdict,
     QuestionResult,
 )
+from app.db.models.feedback import AnswerFeedback, AnswerRecord, FeedbackStatus
 from app.db.models.metadata import DocumentMetadata
 from app.db.models.page import Page
 from app.db.models.version import DocumentVersion, VersionStatus
@@ -26,4 +27,7 @@ __all__ = [
     "ExperimentRun",
     "QuestionResult",
     "HumanReviewVerdict",
+    "AnswerRecord",
+    "AnswerFeedback",
+    "FeedbackStatus",
 ]

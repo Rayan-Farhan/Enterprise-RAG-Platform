@@ -10,6 +10,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from app.db.session import get_db_session
+from app.feedback.service import get_feedback_service
 from app.generation.citation import SupportState
 from app.generation.service import AnswerResult, get_generation_service
 from app.main import app
@@ -19,6 +20,7 @@ from app.retrieval.schemas import Citation, RetrievalResult, RetrievedChunk
 DOC_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 VER_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 CHUNK_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
+ANSWER_ID = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
 
 
 def make_citation() -> Citation:
@@ -91,6 +93,25 @@ class StubGenerationService:
         yield ("done", {"support": str(result.support), "citation_count": len(result.citations)})
 
 
+class StubFeedbackService:
+    """Records answers in memory instead of PostgreSQL."""
+
+    def __init__(self) -> None:
+        self.recorded: list[AnswerResult] = []
+        self.fail = False
+
+    async def record_answer(self, session: object, result: AnswerResult) -> uuid.UUID:
+        if self.fail:
+            raise RuntimeError("database unavailable")
+        self.recorded.append(result)
+        return ANSWER_ID
+
+
+class _NullSession:
+    async def rollback(self) -> None:
+        return None
+
+
 class StubRetriever:
     """Stands in for DenseRetriever at the HTTP boundary."""
 
@@ -131,14 +152,22 @@ class StubRetriever:
         )
 
 
-async def _fake_session() -> AsyncGenerator[None, None]:
-    yield None
+async def _fake_session() -> AsyncGenerator[_NullSession, None]:
+    yield _NullSession()
 
 
 @pytest.fixture
-def generation_stub() -> Generator[StubGenerationService, None, None]:
+def feedback_stub() -> StubFeedbackService:
+    return StubFeedbackService()
+
+
+@pytest.fixture
+def generation_stub(
+    feedback_stub: StubFeedbackService,
+) -> Generator[StubGenerationService, None, None]:
     stub = StubGenerationService()
     app.dependency_overrides[get_generation_service] = lambda: stub
+    app.dependency_overrides[get_feedback_service] = lambda: feedback_stub
     app.dependency_overrides[get_db_session] = _fake_session
     yield stub
     app.dependency_overrides.clear()
@@ -232,6 +261,73 @@ class TestChatEndpoint:
         self, api_client: TestClient, generation_stub: StubGenerationService, payload: dict
     ) -> None:
         assert api_client.post("/api/v1/chat", json=payload).status_code == 422
+
+
+class TestAnswerRecording:
+    """Task 13.3: every answer is recorded so feedback can point at it."""
+
+    def test_answer_is_recorded_and_its_id_returned(
+        self,
+        api_client: TestClient,
+        generation_stub: StubGenerationService,
+        feedback_stub: StubFeedbackService,
+    ) -> None:
+        data = api_client.post("/api/v1/chat", json={"query": "q"}).json()
+
+        assert data["answer_id"] == str(ANSWER_ID)
+        assert len(feedback_stub.recorded) == 1
+
+    def test_evidence_lists_the_passages_the_model_read_by_marker(
+        self, api_client: TestClient, generation_stub: StubGenerationService
+    ) -> None:
+        chunk = RetrievedChunk(
+            chunk_id=CHUNK_ID,
+            document_id=DOC_ID,
+            version_id=VER_ID,
+            content="Document: Staff Handbook\n\nEmployees receive 21 days.",
+            score=0.9,
+            page_number=14,
+            element_ids=["p1"],
+        )
+        dropped = chunk.model_copy(update={"chunk_id": uuid.uuid4()})
+        generation_stub.result = make_answer(
+            context_chunks=[chunk, dropped], context_chunk_ids=[CHUNK_ID]
+        )
+
+        evidence = api_client.post("/api/v1/chat", json={"query": "q"}).json()["evidence"]
+
+        assert [e["marker"] for e in evidence] == ["1"]
+        assert evidence[0]["text"] == "Employees receive 21 days."
+        assert evidence[0]["element_ids"] == ["p1"]
+
+    def test_a_recording_failure_still_returns_the_answer(
+        self,
+        api_client: TestClient,
+        generation_stub: StubGenerationService,
+        feedback_stub: StubFeedbackService,
+    ) -> None:
+        feedback_stub.fail = True
+
+        response = api_client.post("/api/v1/chat", json={"query": "q"})
+
+        assert response.status_code == 200
+        assert response.json()["answer_id"] is None
+        assert "answer_not_recorded" in response.json()["metadata"]["degradations"]
+
+    def test_stream_carries_the_answer_id_in_metadata_and_done(
+        self, api_client: TestClient, generation_stub: StubGenerationService
+    ) -> None:
+        with api_client.stream(
+            "POST", "/api/v1/chat", json={"query": "q", "stream": True}
+        ) as response:
+            body = "".join(response.iter_text())
+
+        payloads = [
+            json.loads(line[6:]) for line in body.splitlines() if line.startswith("data: ")
+        ]
+        assert payloads[0]["answer_id"] == str(ANSWER_ID)
+        assert "evidence" in payloads[0]
+        assert payloads[3]["answer_id"] == str(ANSWER_ID)
 
 
 class TestChatStreaming:

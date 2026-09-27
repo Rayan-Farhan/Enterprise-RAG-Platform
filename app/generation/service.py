@@ -224,37 +224,8 @@ class GenerationService:
         text now would break the Stage 3 exit gate's citation guarantee.
         """
         result = await self.answer(query=query, session=session, top_k=top_k, filters=filters)
-
-        yield (
-            "metadata",
-            {
-                "support": str(result.support),
-                "abstained": result.abstained,
-                "model_name": result.model_name,
-                "provider": result.provider,
-                "prompt_versions": result.prompt_versions,
-                "retrieval_config": result.retrieval_config,
-                "retrieved_chunk_ids": [str(c) for c in result.retrieved_chunk_ids],
-            },
-        )
-        yield ("token", {"text": result.answer})
-        yield (
-            "citations",
-            {"citations": [c.model_dump(mode="json") for c in result.citations]},
-        )
-        yield (
-            "done",
-            {
-                "support": str(result.support),
-                "abstained": result.abstained,
-                "citation_count": len(result.citations),
-                "token_counts": result.token_counts,
-                "retrieval_latency_ms": round(result.retrieval_latency_ms, 2),
-                "generation_latency_ms": round(result.generation_latency_ms, 2),
-                "total_latency_ms": round(result.total_latency_ms, 2),
-                "degradations": result.degradations,
-            },
-        )
+        for event in answer_events(result):
+            yield event
 
     async def _abstain(
         self,
@@ -318,6 +289,48 @@ class GenerationService:
         )
         result.total_latency_ms = (time.perf_counter() - started) * 1000
         return result
+
+
+def answer_events(
+    result: AnswerResult, extra: dict[str, Any] | None = None
+) -> list[tuple[str, dict[str, Any]]]:
+    """The SSE events for a finished answer: metadata, token, citations, done.
+
+    ``extra`` (the recorded ``answer_id`` and evidence passages, from the API
+    layer) is merged into the ``metadata`` and ``done`` payloads.
+    """
+    extra = extra or {}
+    return [
+        (
+            "metadata",
+            {
+                "support": str(result.support),
+                "abstained": result.abstained,
+                "model_name": result.model_name,
+                "provider": result.provider,
+                "prompt_versions": result.prompt_versions,
+                "retrieval_config": result.retrieval_config,
+                "retrieved_chunk_ids": [str(c) for c in result.retrieved_chunk_ids],
+                **extra,
+            },
+        ),
+        ("token", {"text": result.answer}),
+        ("citations", {"citations": [c.model_dump(mode="json") for c in result.citations]}),
+        (
+            "done",
+            {
+                "support": str(result.support),
+                "abstained": result.abstained,
+                "citation_count": len(result.citations),
+                "token_counts": result.token_counts,
+                "retrieval_latency_ms": round(result.retrieval_latency_ms, 2),
+                "generation_latency_ms": round(result.generation_latency_ms, 2),
+                "total_latency_ms": round(result.total_latency_ms, 2),
+                "degradations": result.degradations,
+                **{k: v for k, v in extra.items() if k == "answer_id"},
+            },
+        ),
+    ]
 
 
 def build_context_for_chunks(

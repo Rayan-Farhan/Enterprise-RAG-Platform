@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.api.v1.schemas.feedback import EvidencePassage
 from app.retrieval.schemas import RetrievalFilters
 
 
@@ -78,6 +79,12 @@ class ChatResponse(BaseModel):
     support: str = Field(description="grounded | partial | insufficient")
     abstained: bool
     citations: list[CitationResponse] = Field(default_factory=list)
+    evidence: list[EvidencePassage] = Field(
+        default_factory=list, description="Every passage the model was given, by marker"
+    )
+    answer_id: uuid.UUID | None = Field(
+        default=None, description="Recorded answer to attach feedback to; null if not recorded"
+    )
     metadata: AnswerMetadataResponse
 
 
