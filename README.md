@@ -5,7 +5,7 @@ HR Policy Assistant: answers are grounded in retrieved policy text, every citati
 is checked against the evidence the model was given, and every configuration
 choice is set by a measured experiment.
 
-## What works today (roadmap Stages 0–6)
+## What works today (roadmap Stages 0–6, and part of 13)
 
 - **Document intelligence** — Docling-first parsing with fallbacks, a canonical
   Document → Version → Page → Element model, deduplication and boilerplate detection.
@@ -16,9 +16,13 @@ choice is set by a measured experiment.
   a context-leak guard, and abstention when evidence is insufficient.
 - **Evaluation** — a 181-question golden dataset over a real HR corpus, retrieval /
   answer / LLM-judge metrics, resumable experiment runs, and a CI regression gate.
+- **Chat UI and feedback loop** (Stage 13, partial) — streamed cited answers with
+  an evidence panel and page deep-links. Structured feedback goes to a review
+  queue, where it can be promoted into golden-dataset candidates.
 
 Planned next, not yet built: the async Celery ingestion plane (Stage 7), document
 ACLs (Stage 8), multimodal retrieval (Stage 9), and query understanding (Stage 10).
+The UI has no upload screen or login until Stages 7 and 8.
 
 ## Quick start
 
@@ -28,6 +32,8 @@ make migrate                              # database schema
 python -m scripts.setup_neural_sparse     # OpenSearch ML models for the default retrieval channel
 python -m scripts.ingest_corpus           # parse, chunk and index the benchmark corpus
 make verify                               # lint + typecheck + tests
+uvicorn app.main:app --port 8000          # API
+cd frontend && npm install && npm run dev # UI on http://localhost:5173
 ```
 
 Configuration is environment-driven (`app/core/config.py`); the hosted inference
