@@ -24,6 +24,20 @@ from app.evaluation.schemas import DatasetSplit, Difficulty, QuestionType
 _PROVIDER_UNAVAILABLE_RE = re.compile(r"(?:error|http|status)[\s:]*5\d\d\b")
 
 
+# How a service that is down or unreachable surfaces through its client:
+# opensearch-py, qdrant-client/httpx, asyncpg and the OS socket layer.
+_CONNECTION_FAILURE_MARKERS = (
+    "connectionerror",
+    "connectiontimeout",
+    "connectionreseterror",
+    "connectionrefusederror",
+    "failed to establish a new connection",
+    "connect call failed",
+    "read timed out",
+    "remoteprotocolerror",
+)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -98,13 +112,17 @@ class QuestionResult(BaseModel):
 
     @property
     def failed_on_quota(self) -> bool:
-        """True when a provider refused or could not serve the call, not the system.
+        """True when the environment, not the pipeline, failed the question.
 
-        Covers rate limits (429) and provider-side unavailability (5xx, e.g.
-        Gemini's 503 "model is currently experiencing high demand"). These
-        results are never checkpointed: the question was not measured, it was
-        refused, and recording it would bake an infrastructure limit into the
-        experiment as if it were pipeline behaviour. A resume re-evaluates them.
+        Covers rate limits (429), provider-side unavailability (5xx, e.g.
+        Gemini's 503 "model is currently experiencing high demand"), ML models
+        still reloading, and connection-level failures to a service - refused,
+        reset or timed out, as when Docker Desktop died mid-run on a
+        memory-starved host and all 20 questions of experiment-021 failed at
+        retrieval. These results are never checkpointed: the question was not
+        measured, and recording it would bake an outage into the experiment as
+        if it were pipeline behaviour. Two in a row abort the run as resumable,
+        and a resume re-evaluates them.
         """
         if self.error is None:
             return False
@@ -115,6 +133,7 @@ class QuestionResult(BaseModel):
             or _PROVIDER_UNAVAILABLE_RE.search(haystack) is not None
             # OpenSearch ML after a restart: the model is reloading, not broken.
             or "model not ready" in haystack
+            or any(marker in haystack for marker in _CONNECTION_FAILURE_MARKERS)
         )
 
     def all_metrics(self) -> dict[str, float]:

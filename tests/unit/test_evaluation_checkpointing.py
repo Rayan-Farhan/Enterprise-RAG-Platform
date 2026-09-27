@@ -94,6 +94,13 @@ class TestCheckpointStore:
             # Verbatim from experiment-019: OpenSearch restarted, models reloading.
             "RequestError: RequestError(400, 'illegal_argument_exception', "
             "'Model not ready yet. Please deploy the model first.')",
+            # Verbatim from experiment-021: Docker Desktop died mid-run.
+            "ConnectionError: ConnectionError(HTTPConnection(host='localhost', "
+            "port=9200): Failed to establish a new connection: [WinError 10061]",
+            # experiment-019: OpenSearch saturated by a concurrent encoding job.
+            "ConnectionTimeout: ConnectionTimeout caused by - ReadTimeoutError("
+            "HTTPConnectionPool(host='localhost', port=9200): Read timed out.",
+            "ConnectionResetError: [WinError 64] The specified network name is no longer available",
         ],
     )
     def test_provider_outages_are_not_checkpointed(self, tmp_path: Path, error: str) -> None:
