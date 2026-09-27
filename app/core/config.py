@@ -288,7 +288,9 @@ class AppSettings(BaseSettings):
         ),
     )
     PROMPT_VERSION_JUDGE_ANSWER: str = "judge_answer_v1"
-    PROMPT_VERSION_JUDGE_CITATION: str = "judge_citation_v1"
+    # v2 (2026-09-27): the citation judge now receives the full cited chunk, not
+    # a 240-character excerpt. Scores are not comparable with v1's.
+    PROMPT_VERSION_JUDGE_CITATION: str = "judge_citation_v2"
     PROMPT_VERSION_JUDGE_ABSTENTION: str = "judge_abstention_v1"
 
     # Regression gate (Task 4.6). Tolerance is absolute, on metrics scaled 0-1.

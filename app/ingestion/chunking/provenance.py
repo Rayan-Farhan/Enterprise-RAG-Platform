@@ -47,6 +47,20 @@ def build_prefix(title: str, section_path: list[str], metadata: dict[str, object
     return " | ".join(parts)
 
 
+def strip_prefix(content: str) -> str:
+    """Return the chunk body without its provenance line, if it has one.
+
+    The prefix exists for retrieval - it makes three documents restating the
+    same policy embed differently. It is not evidence, so anything that shows
+    or judges a chunk's text (a citation excerpt, the citation judge) should
+    see the body. Only a first paragraph shaped like the prefix is removed.
+    """
+    head, separator, body = content.partition(PREFIX_SEPARATOR)
+    if separator and head.startswith(("Document: ", "Section: ")):
+        return body.strip()
+    return content.strip()
+
+
 def reserve_tokens(title: str, elements: list[Element], metadata: dict[str, object]) -> int:
     """Tokens to hold back so body plus prefix still fits the nominal chunk size.
 

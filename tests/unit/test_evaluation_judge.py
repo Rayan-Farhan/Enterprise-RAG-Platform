@@ -99,9 +99,7 @@ def golden_question(**overrides: Any) -> GoldenQuestion:
         "difficulty": Difficulty.EASY,
         "split": DatasetSplit.DEV,
         "expected_evidence": [
-            ExpectedEvidence(
-                document_id=DOCUMENT_ID, version_id=VERSION_ID, element_ids=["el-1"]
-            )
+            ExpectedEvidence(document_id=DOCUMENT_ID, version_id=VERSION_ID, element_ids=["el-1"])
         ],
         "acceptable_answer": "20 days per year.",
     }
@@ -168,7 +166,7 @@ class TestJudging:
         assert verdict.judge_model == "openai/gpt-oss-120b"
         assert set(verdict.prompt_hashes) == {
             "judge_answer_v1",
-            "judge_citation_v1",
+            "judge_citation_v2",
             "judge_abstention_v1",
         }
         assert not verdict.errors
@@ -192,7 +190,7 @@ class TestJudging:
         assert {call["temperature"] for call in gateway.calls} == {0.0}
         assert {call["prompt_version"] for call in gateway.calls} == {
             "judge_answer_v1",
-            "judge_citation_v1",
+            "judge_citation_v2",
             "judge_abstention_v1",
         }
 
@@ -209,7 +207,7 @@ class TestJudging:
         gateway = RecordingGateway(
             payloads={
                 "judge_answer_v1": {"faithfulness": 5, "reasoning": "ok"},
-                "judge_citation_v1": {"citation_correctness": 4, "citation_completeness": 4},
+                "judge_citation_v2": {"citation_correctness": 4, "citation_completeness": 4},
                 "judge_abstention_v1": {"abstention_accuracy": 5},
             }
         )
@@ -225,8 +223,24 @@ class TestJudging:
         # This is how the exit gate's "reproducible within a documented variance
         # band" is measured rather than asserted.
         payloads = [
-            json.dumps({"faithfulness": 5, "groundedness": 5, "answer_correctness": 5, "relevance": 5, "completeness": 5}),
-            json.dumps({"faithfulness": 3, "groundedness": 5, "answer_correctness": 5, "relevance": 5, "completeness": 5}),
+            json.dumps(
+                {
+                    "faithfulness": 5,
+                    "groundedness": 5,
+                    "answer_correctness": 5,
+                    "relevance": 5,
+                    "completeness": 5,
+                }
+            ),
+            json.dumps(
+                {
+                    "faithfulness": 3,
+                    "groundedness": 5,
+                    "answer_correctness": 5,
+                    "relevance": 5,
+                    "completeness": 5,
+                }
+            ),
         ]
         gateway = RecordingGateway(payloads=payloads)
         judge = JudgeService(gateway=gateway, settings=settings(EVAL_JUDGE_SAMPLES=2))
@@ -257,3 +271,59 @@ class TestJudging:
 
         assert verdict.errors == ["judge_disabled"]
         assert gateway.calls == []
+
+
+class TestCitationJudgeSeesFullPassages:
+    """experiment-021: citation_correctness 0.40 beside faithfulness 1.00.
+
+    The citation judge was given each citation's 240-character excerpt, roughly
+    half of which was the contextual prefix, and ruled real support missing
+    whenever the supporting sentence came later in the chunk.
+    """
+
+    async def test_the_whole_cited_chunk_reaches_the_judge_without_its_prefix(self) -> None:
+        from app.retrieval.schemas import RetrievedChunk
+
+        body = "Staff receive two weeks. " + "Filler text. " * 40 + "Supervisors give one month."
+        chunk = RetrievedChunk(
+            chunk_id=uuid.uuid4(),
+            document_id=DOCUMENT_ID,
+            version_id=VERSION_ID,
+            content=f"Document: staff_handbook.pdf | Section: Resignation\n\n{body}",
+            score=1.0,
+        )
+        result = answer_result(
+            answer="Supervisors give one month [1].",
+            retrieved_chunks=[chunk],
+            context_chunks=[chunk],
+            citations=[chunk.to_citation("1")],
+        )
+        gateway = RecordingGateway()
+
+        await JudgeService(gateway=gateway, settings=settings()).judge(
+            golden_question(), result, "evidence"
+        )
+
+        citation_call = next(c for c in gateway.calls if c["prompt_version"] == "judge_citation_v2")
+        assert "Supervisors give one month." in citation_call["prompt"]  # beyond 240 chars
+        assert "Document: staff_handbook.pdf |" not in citation_call["prompt"]
+
+
+class TestCitationExcerpt:
+    def test_the_user_facing_quote_skips_the_contextual_prefix(self) -> None:
+        from app.retrieval.schemas import RetrievedChunk
+
+        chunk = RetrievedChunk(
+            chunk_id=uuid.uuid4(),
+            document_id=DOCUMENT_ID,
+            version_id=VERSION_ID,
+            content="Document: x.pdf | Section: Leave | Version Label: v1\n\nEmployees accrue 20 days.",
+            score=1.0,
+        )
+        assert chunk.to_citation("1").quote == "Employees accrue 20 days."
+
+    def test_text_that_merely_has_paragraphs_is_left_intact(self) -> None:
+        from app.ingestion.chunking.provenance import strip_prefix
+
+        text = "Overtime rules.\n\nPaid at time and a half."
+        assert strip_prefix(text) == text

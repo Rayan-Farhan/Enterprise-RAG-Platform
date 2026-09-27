@@ -34,6 +34,7 @@ from app.core.logging import get_logger
 from app.evaluation.schemas import GoldenQuestion
 from app.generation.prompts.registry import PromptTemplate, load_prompt
 from app.generation.service import AnswerResult
+from app.ingestion.chunking.provenance import strip_prefix
 from app.models.gateway import ModelGateway, get_model_gateway
 from app.models.schemas import ModelMetadata
 
@@ -238,10 +239,20 @@ class JudgeService:
             logger.warning("judge_skipped_stub_profile", question_id=question.question_id)
             return verdict
 
+        # The judge must see the whole cited passage. It used to get each
+        # citation's 240-character excerpt, about half of which was the
+        # contextual prefix, and ruled real support "missing" whenever the
+        # supporting sentence came later in the chunk (experiment-021:
+        # citation_correctness 0.40 beside faithfulness 1.00).
+        passages = {
+            chunk.chunk_id: strip_prefix(chunk.content)
+            for chunk in (*result.retrieved_chunks, *result.context_chunks)
+        }
         citations_text = (
             "\n\n".join(
                 f"[{c.marker.strip('[]')}] document='{c.document_title or c.document_id}' "
-                f"page={c.page_number} section='{c.section_label}'\n{c.quote or ''}"
+                f"page={c.page_number} section='{c.section_label}'\n"
+                f"{passages.get(c.chunk_id, c.quote or '')}"
                 for c in result.citations
             )
             or "(the answer carried no citations)"

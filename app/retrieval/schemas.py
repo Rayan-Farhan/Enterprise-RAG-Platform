@@ -137,8 +137,15 @@ class RetrievedChunk(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_citation(self, marker: str, quote_chars: int = 240) -> Citation:
-        """Build the citation object for this chunk."""
-        quote = self.content.strip()
+        """Build the citation object for this chunk.
+
+        The excerpt is taken from the body, not the contextual prefix: with a
+        240-character budget, "Document: … | Section: …" otherwise filled about
+        half of every quote a user saw.
+        """
+        from app.ingestion.chunking.provenance import strip_prefix
+
+        quote = strip_prefix(self.content)
         if len(quote) > quote_chars:
             quote = quote[:quote_chars].rstrip() + "…"
 
