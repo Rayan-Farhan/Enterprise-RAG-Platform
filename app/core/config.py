@@ -269,7 +269,11 @@ class AppSettings(BaseSettings):
     EVAL_JUDGE_PROVIDER: str = "groq"
     EVAL_JUDGE_MODEL: str = ""
     EVAL_JUDGE_TEMPERATURE: float = 0.0
-    EVAL_JUDGE_MAX_TOKENS: int = 800
+    # 2000, not 800: the Groq judge (gpt-oss-120b) is a reasoning model and spends
+    # part of the budget thinking before it writes the JSON verdict. At 800,
+    # experiment-021 lost 2 of 60 judgements - one verdict cut off mid-JSON, one
+    # empty. The verdict itself is ~150 tokens; the rest is headroom.
+    EVAL_JUDGE_MAX_TOKENS: int = 2000
     EVAL_JUDGE_SAMPLES: int = Field(
         default=1,
         ge=1,

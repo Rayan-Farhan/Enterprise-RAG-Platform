@@ -114,6 +114,7 @@ def config_snapshot(settings: AppSettings) -> dict[str, object]:
         "judge_provider": settings.EVAL_JUDGE_PROVIDER,
         "judge_model": settings.EVAL_JUDGE_MODEL or None,
         "judge_samples": settings.EVAL_JUDGE_SAMPLES,
+        "judge_max_tokens": settings.EVAL_JUDGE_MAX_TOKENS,
     }
 
 
