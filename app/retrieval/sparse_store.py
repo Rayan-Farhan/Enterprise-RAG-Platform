@@ -185,6 +185,30 @@ class OpenSearchSparseStore(OpenSearchLexicalStore):
             self.settings.SPARSE_QUERY_TOKENIZER, self.settings.SPARSE_QUERY_TOKENIZER_VERSION
         )
 
+    def model_loaded(self, model_id: str) -> bool:
+        """Whether a model is loaded on a worker node right now.
+
+        The model index's ``model_state`` is a stored record: after an OpenSearch
+        restart it still says DEPLOYED for minutes while the models reload, and
+        every query in that window fails with "Model not ready yet". The profile
+        API reports what is actually serving.
+        """
+        response = self.client.transport.perform_request(
+            "GET", f"/_plugins/_ml/profile/models/{model_id}"
+        )
+        for node in response.get("nodes", {}).values():
+            profile = node.get("models", {}).get(model_id, {})
+            if profile.get("worker_nodes") and profile.get("predictor"):
+                return True
+        return False
+
+    def models_ready(self) -> dict[str, bool]:
+        """Loaded state of both models the channel needs: tokenizer (query) and encoder (ingest)."""
+        return {
+            "tokenizer": self.model_loaded(self.tokenizer_model_id),
+            "encoder": self.model_loaded(self.doc_model_id),
+        }
+
     # -- index --------------------------------------------------------------
 
     def ensure_pipeline(self) -> None:

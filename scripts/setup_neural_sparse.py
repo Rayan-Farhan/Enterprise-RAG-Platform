@@ -93,7 +93,9 @@ def ensure_model(store: OpenSearchSparseStore, name: str, version: str, function
     else:
         model_id, state = str(model["id"]), str(model.get("model_state"))
 
-    if state != "DEPLOYED":
+    # The stored state can say DEPLOYED for a model that is not loaded (after a
+    # restart, until auto-redeploy finishes), so check what is actually serving.
+    if state != "DEPLOYED" or not store.model_loaded(model_id):
         # The first deployment on a fresh volume also fetches PyTorch; a memory
         # breaker can refuse the first attempt while that is still settling.
         for attempt in (1, 2):

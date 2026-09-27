@@ -157,6 +157,22 @@ async def _check_opensearch() -> None:
     await asyncio.to_thread(_opensearch_probe)
 
 
+def _sparse_models_probe() -> None:
+    from app.retrieval.sparse_store import OpenSearchSparseStore
+
+    settings = get_settings()
+    if not settings.ENABLE_NEURAL_SPARSE:
+        return
+    ready = OpenSearchSparseStore(settings=settings).models_ready()
+    missing = [name for name, loaded in ready.items() if not loaded]
+    if missing:
+        raise RuntimeError(f"Sparse model(s) not loaded: {', '.join(missing)}")
+
+
+async def _check_sparse_models() -> None:
+    await asyncio.to_thread(_sparse_models_probe)
+
+
 async def _check_rabbitmq() -> None:
     settings = get_settings()
     _, writer = await asyncio.open_connection(settings.RABBITMQ_HOST, settings.RABBITMQ_PORT)
@@ -176,6 +192,7 @@ _PROBES: tuple[tuple[str, bool, Callable[[], Awaitable[None]]], ...] = (
     ("redis", False, _check_redis),
     ("rabbitmq", False, _check_rabbitmq),
     ("opensearch", False, _check_opensearch),
+    ("sparse_models", False, _check_sparse_models),
 )
 
 
@@ -194,10 +211,12 @@ def probe_plan(
     out of rotation rather than report ``degraded`` while every answer fails.
     """
     opensearch_required = settings.RETRIEVAL_MODE in OPENSEARCH_ONLY_MODES
-    return tuple(
-        (name, opensearch_required if name == "opensearch" else required, check)
-        for name, required, check in _PROBES
-    )
+    # OpenSearch answering is not enough in sparse mode: after a restart it goes
+    # green minutes before its models finish reloading, and queries fail until
+    # they do. Readiness waits for the models too.
+    sparse_required = settings.RETRIEVAL_MODE == "sparse" and settings.ENABLE_NEURAL_SPARSE
+    overrides = {"opensearch": opensearch_required, "sparse_models": sparse_required}
+    return tuple((name, overrides.get(name, required), check) for name, required, check in _PROBES)
 
 
 async def check_dependencies(settings: AppSettings | None = None) -> list[DependencyReport]:

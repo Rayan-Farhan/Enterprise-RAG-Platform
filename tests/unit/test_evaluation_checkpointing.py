@@ -91,6 +91,9 @@ class TestCheckpointStore:
             'error 503: {"error": {"code": 503, "message": "This model is currently '
             'experiencing high demand."}}',
             "ModelProviderException: groq failed (HTTP 502): bad gateway",
+            # Verbatim from experiment-019: OpenSearch restarted, models reloading.
+            "RequestError: RequestError(400, 'illegal_argument_exception', "
+            "'Model not ready yet. Please deploy the model first.')",
         ],
     )
     def test_provider_outages_are_not_checkpointed(self, tmp_path: Path, error: str) -> None:

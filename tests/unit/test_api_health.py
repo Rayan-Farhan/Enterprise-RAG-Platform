@@ -215,3 +215,48 @@ class TestRequirementFollowsRetrievalMode:
         settings = AppSettings(APP_ENV="testing")
         plan = {name: req for name, req, _ in health_module.probe_plan(settings)}
         assert plan["opensearch"] is True
+
+
+class TestSparseModelReadiness:
+    """OpenSearch goes green minutes before its ML models reload (experiment-019)."""
+
+    @pytest.mark.parametrize(
+        ("overrides", "required"),
+        [
+            ({}, True),  # the production default: sparse
+            ({"RETRIEVAL_MODE": "hybrid"}, False),  # fusion survives a lost channel
+            ({"RETRIEVAL_MODE": "bm25"}, False),  # needs OpenSearch, not the models
+            ({"ENABLE_NEURAL_SPARSE": False, "RETRIEVAL_MODE": "dense"}, False),
+        ],
+    )
+    def test_loaded_models_are_required_only_when_retrieval_needs_them(
+        self, overrides: dict[str, object], required: bool
+    ) -> None:
+        from app.core.config import AppSettings
+
+        settings = AppSettings(APP_ENV="testing", **overrides)
+        plan = {name: req for name, req, _ in health_module.probe_plan(settings)}
+        assert plan["sparse_models"] is required
+
+    @pytest.mark.parametrize(
+        ("profile", "loaded"),
+        [
+            ({"worker_nodes": ["n1"], "predictor": "SparseTokenizerModel@1"}, True),
+            ({"model_state": "DEPLOYED"}, False),  # recorded, not serving
+            ({}, False),
+        ],
+    )
+    def test_model_loaded_reads_the_profile_not_the_stored_state(
+        self, profile: dict[str, object], loaded: bool
+    ) -> None:
+        from app.retrieval.sparse_store import OpenSearchSparseStore
+
+        class Transport:
+            def perform_request(self, method: str, path: str, body: object = None) -> object:
+                return {"nodes": {"n1": {"models": {"m1": profile}}}}
+
+        class Client:
+            transport = Transport()
+
+        store = OpenSearchSparseStore(client=Client())  # type: ignore[arg-type]
+        assert store.model_loaded("m1") is loaded

@@ -113,6 +113,8 @@ class QuestionResult(BaseModel):
             "ratelimit" in haystack.replace(" ", "")
             or "429" in haystack
             or _PROVIDER_UNAVAILABLE_RE.search(haystack) is not None
+            # OpenSearch ML after a restart: the model is reloading, not broken.
+            or "model not ready" in haystack
         )
 
     def all_metrics(self) -> dict[str, float]:
