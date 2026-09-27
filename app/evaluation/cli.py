@@ -22,6 +22,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.session import get_session_factory
 from app.evaluation import storage
+from app.evaluation.candidates import accept_candidates, load_candidates
 from app.evaluation.dataset import load_split, summarize, validate_against_corpus
 from app.evaluation.diff import compare, format_diff, gate
 from app.evaluation.human_review import (
@@ -262,9 +263,7 @@ async def cmd_gate(args: argparse.Namespace) -> int:
         print(f"Baseline experiment not found: {args.baseline}", file=sys.stderr)
         return 2
 
-    candidate = await _resolve_run(
-        args.candidate, exclude=args.baseline, comparable_to=baseline
-    )
+    candidate = await _resolve_run(args.candidate, exclude=args.baseline, comparable_to=baseline)
     if candidate is None:
         if args.candidate == LATEST:
             # Nothing to gate is not a pass and not a failure: most commits do
@@ -378,6 +377,51 @@ async def cmd_list(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# feedback candidates (Task 13.4)
+# --------------------------------------------------------------------------
+
+
+async def cmd_candidates(args: argparse.Namespace) -> int:
+    """List candidates promoted from user feedback, awaiting acceptance."""
+    candidates = load_candidates()
+    if not candidates:
+        print("No pending candidates.")
+        return 0
+    for c in candidates:
+        evidence = sum(len(ev.element_ids) for ev in c.expected_evidence)
+        print(f"{c.question_id:<28}{c.split.value:<12}{c.question_type.value:<22}{evidence:>3} el")
+        print(f"    Q: {c.question}")
+        print(f"    A: {c.acceptable_answer}")
+    return 0
+
+
+async def cmd_accept_candidates(args: argparse.Namespace) -> int:
+    """Resolve candidates against the corpus, then append them to their splits."""
+    pending = load_candidates()
+    chosen = [c for c in pending if not args.ids or c.question_id in args.ids]
+    if not chosen:
+        print("Nothing to accept.")
+        return 0
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        for split in {c.split for c in chosen}:
+            report = await validate_against_corpus(
+                [c for c in chosen if c.split is split], session, split=split
+            )
+            if report.issues:
+                print(f"{len(report.issues)} candidate evidence pointers do not resolve:")
+                for issue in report.issues:
+                    print(f"  {issue.question_id}: {issue.reason} {issue.detail}")
+                return 1
+
+    accepted = accept_candidates(args.ids or None)
+    for c in accepted:
+        print(f"accepted {c.question_id} -> {c.split.value}")
+    return 0
+
+
+# --------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -466,6 +510,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_parser = subparsers.add_parser("list", help="list committed experiments")
     list_parser.set_defaults(func=cmd_list)
+
+    candidates_parser = subparsers.add_parser(
+        "candidates", help="list golden-dataset candidates promoted from feedback"
+    )
+    candidates_parser.set_defaults(func=cmd_candidates)
+
+    accept_parser = subparsers.add_parser(
+        "accept-candidates", help="validate candidates against the corpus and add them to splits"
+    )
+    accept_parser.add_argument("ids", nargs="*", help="question IDs; all pending when omitted")
+    accept_parser.set_defaults(func=cmd_accept_candidates)
 
     return parser
 
