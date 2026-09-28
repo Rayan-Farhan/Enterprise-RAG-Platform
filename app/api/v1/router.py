@@ -8,12 +8,14 @@ from app.api.v1.documents import router as documents_router
 from app.api.v1.evaluation import router as evaluation_router
 from app.api.v1.feedback import router as feedback_router
 from app.api.v1.health import router as health_router
+from app.api.v1.jobs import router as jobs_router
 from app.api.v1.search import router as search_router
 
 api_v1_router = APIRouter()
 
 api_v1_router.include_router(health_router)
 api_v1_router.include_router(documents_router)
+api_v1_router.include_router(jobs_router)
 api_v1_router.include_router(search_router)
 api_v1_router.include_router(chat_router)
 api_v1_router.include_router(admin_router)

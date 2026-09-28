@@ -10,6 +10,7 @@ from app.db.models.evaluation import (
     QuestionResult,
 )
 from app.db.models.feedback import AnswerFeedback, AnswerRecord, FeedbackStatus
+from app.db.models.job import Job, JobStatus, JobType
 from app.db.models.metadata import DocumentMetadata
 from app.db.models.page import Page
 from app.db.models.version import DocumentVersion, VersionStatus
@@ -30,4 +31,7 @@ __all__ = [
     "AnswerRecord",
     "AnswerFeedback",
     "FeedbackStatus",
+    "Job",
+    "JobStatus",
+    "JobType",
 ]
