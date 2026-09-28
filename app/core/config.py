@@ -70,6 +70,20 @@ class AppSettings(BaseSettings):
     def rabbitmq_url(self) -> str:
         return f"amqp://{self.RABBITMQ_USER}:{self.RABBITMQ_PASSWORD}@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}//"
 
+    # Async ingestion plane (Stage 7, ADR-018, ADR-043). The pools and the queues
+    # each one consumes are defined in app/workers/queues.py; these only tune them.
+    WORKER_POOL_IMPLEMENTATION: Literal["auto", "prefork", "threads", "solo"] = Field(
+        default="auto",
+        description=(
+            "Celery execution pool. auto = prefork on POSIX, threads on Windows, "
+            "where billiard's prefork pool is unsupported"
+        ),
+    )
+    WORKER_CONCURRENCY: dict[str, int] = Field(
+        default_factory=dict,
+        description="Per-pool concurrency overrides, e.g. '{\"document\": 4}'",
+    )
+
     # MinIO / Object Storage (ADR-003)
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minioadmin"

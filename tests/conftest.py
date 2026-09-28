@@ -38,6 +38,7 @@ _LEAKY_ENV_PREFIXES = (
     "ENABLE_",
     "RATE_LIMIT_",
     "MAX_UPLOAD_",
+    "WORKER_",
 )
 
 

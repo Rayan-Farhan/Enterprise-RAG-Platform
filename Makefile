@@ -1,7 +1,7 @@
 .PHONY: help up down restart ps logs lint format typecheck test test-unit test-integration \
         test-e2e smoke migrate migration hooks verify clean \
         eval eval-diff eval-gate eval-validate eval-validate-schema eval-list \
-        eval-export-review eval-import-review
+        eval-export-review eval-import-review workers worker workers-check
 
 help:
 	@echo "Enterprise Multimodal RAG Platform - Command Center"
@@ -18,6 +18,9 @@ help:
 	@echo "make test-integration - Run integration tests only"
 	@echo "make test-cov         - Run tests with coverage"
 	@echo "make smoke            - Live model gateway smoke test (needs provider API keys)"
+	@echo "make workers          - Start every Celery worker pool (Ctrl-C stops all)"
+	@echo "make worker           - Start one worker pool (POOL=document)"
+	@echo "make workers-check    - Ping every queue and report which worker answered"
 	@echo "make migrate          - Apply Alembic migrations to head"
 	@echo "make migration        - Autogenerate a new migration (MSG=...)"
 	@echo "make hooks            - Install pre-commit hooks"
@@ -74,6 +77,17 @@ test-cov:
 # the corresponding API key is absent.
 smoke:
 	pytest -m live tests/e2e
+
+# Async ingestion plane (Stage 7). Pools and their queues live in
+# app/workers/queues.py; the CLI starts one celery worker per pool from there.
+workers:
+	python -m app.workers.cli start
+
+worker:
+	python -m app.workers.cli start --pool "$(POOL)"
+
+workers-check:
+	python -m app.workers.cli check
 
 migrate:
 	alembic upgrade head
