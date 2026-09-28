@@ -60,7 +60,26 @@ jobs:
     runs-on: ubuntu-latest
     # BM25 (Task 6.1) is only testable against real OpenSearch analyzers, and
     # late interaction (Task 6.6) against Qdrant's MAX_SIM multivector scoring.
+    # The worker test (Task 7.1) needs a real broker and result backend.
     services:
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 6
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
       qdrant:
         image: qdrant/qdrant:v1.19.0
         ports:
