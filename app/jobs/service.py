@@ -1,9 +1,10 @@
 """Job lifecycle: creation, status transitions, progress, cancellation (Task 7.2).
 
     queued ──start──> running ──succeed──> succeeded
-      │                 │ │ └───fail─────> failed
-      │                 │ └─cancel seen──> cancelled
-      └────cancel─────────────────────────> cancelled
+      ▲ │                 │ │ └───fail─────> failed (a dead letter, until replayed)
+      │ │                 │ └─cancel seen──> cancelled
+      │ └────cancel───────┼─────────────────> cancelled
+      └──schedule_retry───┘  (a transient failure, Task 7.5)
 
 A running job cannot be stopped from outside without risking half-written
 state, so cancelling one only sets `cancel_requested_at`; the task sees it at
@@ -32,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import ConflictException, NotFoundException
-from app.db.models.job import TERMINAL_STATUSES, Job, JobStatus
+from app.db.models.job import TERMINAL_STATUSES, FailureKind, Job, JobStatus
 from app.db.session import get_session_factory
 
 # Progress messages longer than the column are truncated, never rejected: a
@@ -77,6 +78,9 @@ class JobService:
         document_id: uuid.UUID | None = None,
         version_id: uuid.UUID | None = None,
         job_id: uuid.UUID | None = None,
+        task_name: str | None = None,
+        payload: dict[str, Any] | None = None,
+        replay_of_id: uuid.UUID | None = None,
     ) -> Job:
         """Record a queued job.
 
@@ -93,6 +97,9 @@ class JobService:
             status=JobStatus.QUEUED.value,
             attempt=0,
             progress=0.0,
+            task_name=task_name,
+            payload=payload,
+            replay_of_id=replay_of_id,
         )
         async with self._sessions() as session:
             session.add(job)
@@ -206,15 +213,40 @@ class JobService:
             values["progress_message"] = message[:_MESSAGE_LIMIT]
         await self._finish(job_id, values)
 
-    async def fail(self, job_id: uuid.UUID, error: str) -> None:
+    async def fail(
+        self, job_id: uuid.UUID, error: str, kind: FailureKind = FailureKind.PERMANENT
+    ) -> None:
+        """End the job as failed; it is now a dead letter until replayed."""
         await self._finish(
             job_id,
             {
                 "status": JobStatus.FAILED.value,
                 "error": error[:_ERROR_LIMIT],
+                "failure_kind": kind.value,
                 "completed_at": _now(),
             },
         )
+
+    async def schedule_retry(self, job_id: uuid.UUID, error: str, message: str) -> None:
+        """Put a running job back in the queue after a transient failure.
+
+        The row returns to `queued` with the error kept, so the API shows why
+        it is waiting; the next start counts another attempt. A cancel request
+        that arrived meanwhile wins: the job is cancelled instead.
+        """
+        values = {
+            "status": JobStatus.QUEUED.value,
+            "error": error[:_ERROR_LIMIT],
+            "progress_message": message[:_MESSAGE_LIMIT],
+            "worker": None,
+        }
+        if not await self._transition(
+            job_id,
+            allowed_from=(JobStatus.RUNNING,),
+            values=values,
+            require_no_cancel_request=True,
+        ):
+            await self._raise_for_stopped(job_id)
 
     async def fail_unpublished(self, job_id: uuid.UUID, error: str) -> None:
         """Fail a job whose message never reached the broker, so it never ran."""
@@ -224,9 +256,28 @@ class JobService:
             values={
                 "status": JobStatus.FAILED.value,
                 "error": error[:_ERROR_LIMIT],
+                "failure_kind": FailureKind.UNPUBLISHED.value,
                 "completed_at": _now(),
             },
         )
+
+    async def dead_letters(self, limit: int = 50, offset: int = 0) -> Sequence[Job]:
+        """Failed jobs that no replay has picked up yet, newest first."""
+        replayed = select(Job.replay_of_id).where(Job.replay_of_id.is_not(None))
+        async with self._sessions() as session:
+            result = await session.execute(
+                select(Job)
+                .where(Job.status == JobStatus.FAILED.value, Job.id.not_in(replayed))
+                .order_by(Job.completed_at.desc(), Job.id)
+                .limit(limit)
+                .offset(offset)
+            )
+            return result.scalars().all()
+
+    async def replay_of(self, job_id: uuid.UUID) -> Job | None:
+        async with self._sessions() as session:
+            result = await session.execute(select(Job).where(Job.replay_of_id == job_id))
+            return result.scalars().first()
 
     async def mark_cancelled(self, job_id: uuid.UUID) -> None:
         await self._finish(job_id, {"status": JobStatus.CANCELLED.value, "completed_at": _now()})

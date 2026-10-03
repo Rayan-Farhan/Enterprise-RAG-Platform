@@ -15,13 +15,15 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from app.core.exceptions import ConflictException
 from app.core.logging import get_logger
-from app.db.models.job import Job, JobType
+from app.db.models.job import Job, JobStatus, JobType
 from app.ingestion import pipeline
 from app.ingestion.pipeline import PipelineServices, StepOutcome
 from app.jobs.service import JobService
-from app.workers.job_task import JobContext, enqueue, job_task
+from app.workers.job_task import JobContext, enqueue, job_task, task_type_of
 from app.workers.queues import QueueDomain
+from app.workers.retry import CONTROL_POLICY, INFERENCE_POLICY
 
 logger = get_logger("app.workers.ingestion")
 
@@ -103,6 +105,7 @@ async def chunk_document(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     queue=QueueDomain.EMBEDDING,
     task_type=JobType.GENERATE_EMBEDDINGS,
     then="ingestion.index_opensearch",
+    policy=INFERENCE_POLICY,
 )
 async def generate_embeddings(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     await _run(pipeline.generate_embeddings, ctx)
@@ -113,6 +116,7 @@ async def generate_embeddings(ctx: JobContext, *, metadata: dict[str, Any]) -> N
     queue=QueueDomain.INDEXING,
     task_type=JobType.INDEX_OPENSEARCH,
     then="ingestion.index_qdrant",
+    policy=INFERENCE_POLICY,
 )
 async def index_opensearch(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     await _run(pipeline.index_opensearch, ctx)
@@ -133,6 +137,7 @@ async def index_qdrant(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     queue=QueueDomain.INDEXING,
     task_type=JobType.VALIDATE_INDEX,
     then="ingestion.publish_version",
+    policy=CONTROL_POLICY,
 )
 async def validate_index(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     await _run(pipeline.validate_index, ctx)
@@ -142,6 +147,7 @@ async def validate_index(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     name="ingestion.publish_version",
     queue=QueueDomain.INGESTION,
     task_type=JobType.PUBLISH_VERSION,
+    policy=CONTROL_POLICY,
 )
 async def publish_version(ctx: JobContext, *, metadata: dict[str, Any]) -> None:
     await _run(pipeline.publish_version, ctx)
@@ -175,3 +181,42 @@ async def start_ingestion(
         jobs=jobs,
         metadata=metadata or {},
     )
+
+
+async def resume_ingestion(version_id: uuid.UUID, jobs: JobService | None = None) -> Job:
+    """Restart a version's chain at the first step that has not succeeded (Task 7.5).
+
+    Nothing before that step runs again, and the step itself skips whatever
+    part of its work is already persisted - a 900-page document that failed at
+    index_qdrant resumes there and is not re-parsed. A dead letter at that step
+    is marked as replayed by the new job.
+    """
+    jobs = jobs or JobService()
+    history = await jobs.list_for_version(version_id)
+    if not history:
+        raise ConflictException(f"Version '{version_id}' has no ingestion history to resume")
+
+    for task in CHAIN:
+        step = task_type_of(task.name)
+        runs = [j for j in history if j.task_type == step]
+        if any(j.status == JobStatus.SUCCEEDED for j in runs):
+            continue
+        active = [j for j in runs if j.status in (JobStatus.QUEUED, JobStatus.RUNNING)]
+        if active:
+            raise ConflictException(
+                f"{step} for version '{version_id}' is already {active[0].status} "
+                f"as job '{active[0].id}'"
+            )
+        failed = [j for j in runs if j.status == JobStatus.FAILED]
+        dead = failed[-1] if failed and await jobs.replay_of(failed[-1].id) is None else None
+        # Every step carries the upload's metadata; any recorded run has it.
+        payload = next((j.payload for j in history if j.payload), None) or {}
+        return await enqueue(
+            task,
+            document_id=history[0].document_id,
+            version_id=version_id,
+            jobs=jobs,
+            replay_of_id=dead.id if dead else None,
+            metadata=payload.get("metadata", {}),
+        )
+    raise ConflictException(f"Every step of version '{version_id}' has already succeeded")

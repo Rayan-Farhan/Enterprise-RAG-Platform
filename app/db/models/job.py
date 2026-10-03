@@ -9,8 +9,9 @@ job state from here, never from the broker.
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid, text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base, TimestampMixin
@@ -26,6 +27,15 @@ class JobStatus(StrEnum):
 
 TERMINAL_STATUSES = frozenset({JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED})
 ACTIVE_JOB_PREDICATE = "status IN ('queued', 'running')"
+
+
+class FailureKind(StrEnum):
+    """Why a job ended up dead-lettered (Task 7.5)."""
+
+    PERMANENT = "permanent"  # an error retrying cannot fix
+    RETRIES_EXHAUSTED = "retries_exhausted"  # transient, but it kept happening
+    DELIVERY_LIMIT = "delivery_limit"  # a poison message: delivered too often to trust
+    UNPUBLISHED = "unpublished"  # never reached the broker
 
 
 class JobType(StrEnum):
@@ -88,6 +98,20 @@ class Job(Base, TimestampMixin):
     progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False, doc="0.0 to 1.0")
     progress_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, doc="The Celery task that runs this job; what a replay re-sends"
+    )
+    payload: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, doc="The task's arguments, kept so a dead letter can be replayed"
+    )
+    failure_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    replay_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        doc="The dead-lettered job this one replays",
+    )
     cancel_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

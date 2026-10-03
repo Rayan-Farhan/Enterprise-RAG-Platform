@@ -27,10 +27,11 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import AppSettings
+from app.core.exceptions import ConflictException
 from app.db.models.base import Base
 from app.db.models.chunk import Chunk
 from app.db.models.element import Element
-from app.db.models.job import Job, JobStatus, JobType
+from app.db.models.job import FailureKind, Job, JobStatus, JobType
 from app.db.models.page import Page
 from app.db.models.version import DocumentVersion, VersionStatus
 from app.ingestion import pipeline
@@ -785,3 +786,146 @@ class TestIdempotency:
                 session.add(clone)
                 with pytest.raises(IntegrityError):
                     await session.commit()
+
+
+class FlakyGateway(CountingGateway):
+    """Fails the first ``failures`` embedding calls the way a provider outage does."""
+
+    def __init__(self, failures: int) -> None:
+        super().__init__()
+        self.failures = failures
+
+    async def embed(self, texts: list[str], model_name: str | None = None) -> EmbeddingsResponse:
+        if self.failures:
+            self.failures -= 1
+            raise ConnectionError("embedding provider unreachable")
+        return await super().embed(texts, model_name)
+
+
+class TestRetriesAndDeadLetters:
+    """Task 7.5: transient failures retry, permanent ones dead-letter and replay."""
+
+    async def test_a_transient_failure_is_retried_and_the_chain_completes(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        # The embedding service retries internally first; with that off, the
+        # outage reaches the job, which is the layer under test.
+        doubles.settings = doubles.settings.model_copy(update={"EMBEDDING_MAX_RETRIES": 0})
+        doubles.gateway = FlakyGateway(failures=2)
+
+        accepted = await ingest(sessions, doubles, broker)
+
+        jobs = {j.task_type: j for j in await jobs_of(sessions, accepted.version_id)}
+        embed = jobs[JobType.GENERATE_EMBEDDINGS]
+        assert (embed.status, embed.attempt) == (JobStatus.SUCCEEDED, 3)
+        assert len(jobs) == len(CHAIN_ORDER)  # the retries are the same job, not new ones
+        assert await version_status(sessions, accepted.version_id) == VersionStatus.ACTIVE
+
+    async def test_a_dead_letter_replays_after_the_fault_is_fixed(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        doubles.vectors.drop_one = True
+        accepted = await ingest(sessions, doubles, broker)
+        service = JobService(sessions)
+        (dead,) = await service.dead_letters()
+        assert (dead.task_type, dead.failure_kind) == (
+            JobType.VALIDATE_INDEX,
+            FailureKind.PERMANENT,
+        )
+        embedded, parsed = doubles.gateway.embedded_texts, doubles.parser.calls
+
+        doubles.vectors.drop_one = False
+        replayed = await job_task_module.replay(dead, service)
+        await drain(broker)
+
+        assert replayed.replay_of_id == dead.id
+        assert await service.dead_letters() == []
+        assert await version_status(sessions, accepted.version_id) == VersionStatus.ACTIVE
+        assert (doubles.gateway.embedded_texts, doubles.parser.calls) == (embedded, parsed)
+        with pytest.raises(ConflictException, match="already replayed"):
+            await job_task_module.replay(dead, service)
+
+    async def test_only_failed_jobs_replay(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        accepted = await ingest(sessions, doubles, broker)
+        done = (await jobs_of(sessions, accepted.version_id))[0]
+
+        with pytest.raises(ConflictException, match="only failed jobs replay"):
+            await job_task_module.replay(done, JobService(sessions))
+
+
+class TestResume:
+    async def test_resume_starts_at_the_first_unfinished_step_and_reparses_nothing(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        doubles.vectors.drop_one = True
+        accepted = await ingest(sessions, doubles, broker)
+        parsed = doubles.parser.calls
+        doubles.vectors.drop_one = False
+        service = JobService(sessions)
+
+        resumed = await ingestion_tasks.resume_ingestion(accepted.version_id, service)
+        await drain(broker)
+
+        assert resumed.task_type == JobType.VALIDATE_INDEX
+        assert resumed.payload == {"metadata": {"department": "HR", "policy_type": "Leave"}}
+        assert await service.dead_letters() == []  # the resume picked up the dead letter
+        assert doubles.parser.calls == parsed
+        assert await version_status(sessions, accepted.version_id) == VersionStatus.ACTIVE
+
+    async def test_a_fully_ingested_version_has_nothing_to_resume(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        accepted = await ingest(sessions, doubles, broker)
+
+        with pytest.raises(ConflictException, match="already succeeded"):
+            await ingestion_tasks.resume_ingestion(accepted.version_id, JobService(sessions))
+
+    async def test_a_worker_killed_mid_step_resumes_there_with_no_duplicates(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        # Run the chain up to generate_embeddings, then "kill" that worker: the
+        # job is left running and its message goes back to the queue.
+        accepted = await accept(sessions, doubles)
+        service = JobService(sessions)
+        await ingestion_tasks.start_ingestion(
+            accepted.document_id, accepted.version_id, {}, jobs=service
+        )
+        while broker[0][0] is not ingestion_tasks.generate_embeddings:
+            await drain(broker[:1])
+            broker.pop(0)
+        task, kwargs = broker[0]
+        await service.start(uuid.UUID(kwargs["job_id"]), worker="killed@host")
+        parsed = doubles.parser.calls
+        with pytest.raises(ConflictException, match="already running"):
+            await ingestion_tasks.resume_ingestion(accepted.version_id, service)
+
+        await drain(broker)  # the redelivery, on a restarted worker
+
+        jobs = await jobs_of(sessions, accepted.version_id)
+        embed = next(j for j in jobs if j.task_type == JobType.GENERATE_EMBEDDINGS)
+        assert (embed.status, embed.attempt) == (JobStatus.SUCCEEDED, 2)
+        assert [j.task_type for j in jobs] == CHAIN_ORDER
+        assert doubles.parser.calls == parsed
+        chunks = await count(sessions, Chunk, accepted.version_id)
+        assert len(doubles.vectors.points) == len(doubles.lexical.docs) == chunks
+        assert await version_status(sessions, accepted.version_id) == VersionStatus.ACTIVE

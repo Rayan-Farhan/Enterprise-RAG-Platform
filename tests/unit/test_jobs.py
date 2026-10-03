@@ -315,6 +315,7 @@ class TestExecuteJob:
 
 
 class FakeTask:
+    name = "tests.fake_task"
     queue = "parsing"
 
     def __init__(self, jobs: JobService, fail: bool = False) -> None:
@@ -441,3 +442,59 @@ class TestJobsApi:
         await jobs.succeed(job_id)
 
         assert client.post(f"/api/v1/jobs/{job_id}/cancel").status_code == 409
+
+    async def _dead(self, jobs: JobService) -> uuid.UUID:
+        job = await jobs.create(
+            task_type=JobType.DIAGNOSTIC,
+            queue="ingestion",
+            task_name="diagnostics.exercise_job",
+            payload={"steps": 1, "step_seconds": 0.0},
+        )
+        await jobs.start(job.id, worker="w")
+        await jobs.fail(job.id, "ValueError: bad input")
+        return job.id
+
+    async def test_dead_letters_list_failed_jobs_with_why(
+        self, client: TestClient, jobs: JobService
+    ) -> None:
+        dead = await self._dead(jobs)
+        await queued(jobs)  # a live job is not a dead letter
+
+        items = client.get("/api/v1/dead-letters").json()["items"]
+
+        assert [(i["id"], i["failure_kind"]) for i in items] == [(str(dead), "permanent")]
+
+    async def test_replay_sends_the_recorded_task_as_a_new_job(
+        self, client: TestClient, jobs: JobService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.workers.tasks.diagnostics import exercise_job
+
+        sent: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            exercise_job, "apply_async", lambda *, kwargs, task_id: sent.append(kwargs)
+        )
+        dead = await self._dead(jobs)
+
+        response = client.post(f"/api/v1/dead-letters/{dead}/replay")
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["replay_of_id"] == str(dead)
+        assert body["status"] == "queued"
+        assert sent == [{"job_id": body["id"], "steps": 1, "step_seconds": 0.0}]
+        assert client.get("/api/v1/dead-letters").json()["items"] == []
+        assert client.post(f"/api/v1/dead-letters/{dead}/replay").status_code == 409
+
+    async def test_a_live_job_cannot_be_replayed(
+        self, client: TestClient, jobs: JobService
+    ) -> None:
+        job_id = await queued(jobs)
+
+        assert client.post(f"/api/v1/dead-letters/{job_id}/replay").status_code == 409
+
+    async def test_resuming_an_unknown_version_is_404(
+        self, client: TestClient, document_id: uuid.UUID
+    ) -> None:
+        response = client.post(f"/api/v1/documents/{document_id}/versions/{uuid.uuid4()}/resume")
+
+        assert response.status_code == 404

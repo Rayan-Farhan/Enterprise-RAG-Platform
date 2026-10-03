@@ -20,6 +20,14 @@ class JobResponse(BaseModel):
     progress: float = Field(description="0.0 to 1.0")
     progress_message: str | None
     error: str | None
+    failure_kind: str | None = Field(
+        default=None,
+        description="Why a failed job is dead-lettered: permanent, retries_exhausted, "
+        "delivery_limit or unpublished",
+    )
+    replay_of_id: uuid.UUID | None = Field(
+        default=None, description="The dead-lettered job this one replays"
+    )
     cancel_requested_at: datetime | None = Field(
         description="Set while a running job is winding down after a cancel request"
     )
