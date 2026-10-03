@@ -178,3 +178,18 @@ def test_office_parser_pptx(temp_pptx: Path) -> None:
     assert doc.file_type == "pptx"
     assert doc.total_pages == 1
     assert len(doc.all_elements) > 0
+
+
+def test_opendataloader_hybrid_options_name_the_backend() -> None:
+    local = OpenDataLoaderParser()
+    assert local.parser_name == "opendataloader"
+    assert local._hybrid_options() == {}
+
+    hybrid = OpenDataLoaderParser(hybrid_url="http://127.0.0.1:5002", hybrid_timeout_ms=60000)
+    assert hybrid.parser_name == "opendataloader-hybrid"
+    assert hybrid._hybrid_options() == {
+        "hybrid": "docling-fast",
+        "hybrid_mode": "auto",
+        "hybrid_url": "http://127.0.0.1:5002",
+        "hybrid_timeout": "60000",
+    }

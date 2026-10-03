@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import unicodedata
@@ -113,6 +114,29 @@ def _opendataloader() -> DocumentParser:
     return OpenDataLoaderParser()
 
 
+#: Where the hybrid backend listens (``opendataloader-pdf-hybrid --port 5002``).
+HYBRID_URL = os.environ.get("ODL_HYBRID_URL", "http://127.0.0.1:5002")
+
+
+def _opendataloader_hybrid() -> DocumentParser:
+    import socket
+    from urllib.parse import urlparse
+
+    _opendataloader()  # same dependency checks as local mode
+    target = urlparse(HYBRID_URL)
+    try:
+        with socket.create_connection((target.hostname or "127.0.0.1", target.port or 80), 2):
+            pass
+    except OSError as exc:
+        raise ImportError(
+            f"hybrid backend not reachable at {HYBRID_URL}; start "
+            "`opendataloader-pdf-hybrid --port 5002 --heading-hierarchy`"
+        ) from exc
+    from app.ingestion.parsers.opendataloader_parser import OpenDataLoaderParser
+
+    return OpenDataLoaderParser(hybrid_url=HYBRID_URL)
+
+
 #: name -> (factory, one-line description for the report)
 PARSERS: dict[str, tuple[Callable[[], DocumentParser], str]] = {
     "pymupdf-layout": (_layout, "PyMuPDF + typography heuristics (production primary)"),
@@ -120,6 +144,11 @@ PARSERS: dict[str, tuple[Callable[[], DocumentParser], str]] = {
     "pymupdf": (_plain, "PyMuPDF text blocks, no typing (baseline)"),
     "docling": (_docling, "Docling layout + TableFormer models, OCR off"),
     "opendataloader": (_opendataloader, "OpenDataLoader PDF, rule-based (Java)"),
+    "opendataloader-hybrid": (
+        _opendataloader_hybrid,
+        "OpenDataLoader hybrid: local engine + Docling backend for complex pages "
+        "(auto triage, heading hierarchy, OCR on image regions)",
+    ),
 }
 
 

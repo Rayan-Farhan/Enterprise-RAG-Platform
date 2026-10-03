@@ -7,6 +7,12 @@ and images, each with page and bounding box, as JSON. No model and no GPU.
 
 Optional dependency (``pip install -e ".[parsers]"``) that also needs a Java
 runtime (11+) on PATH; imported on first use.
+
+**Hybrid mode** (``hybrid_url`` set): the engine triages each page and sends the
+complex ones to a Docling-based backend server (``opendataloader-pdf-hybrid``,
+from the ``opendataloader-pdf[hybrid]`` extra), which adds layout-model
+structure, heading hierarchy and OCR for image-only content. Simple pages stay
+on the local engine. The JSON contract is the same, so mapping is shared.
 """
 
 from __future__ import annotations
@@ -103,6 +109,24 @@ class OpenDataLoaderParser:
 
     parser_name: str = "opendataloader"
 
+    def __init__(
+        self,
+        hybrid_url: str | None = None,
+        hybrid_mode: str = "auto",
+        hybrid_timeout_ms: int = 0,
+    ) -> None:
+        """``hybrid_url`` enables hybrid mode against a running backend server.
+
+        ``hybrid_mode`` is ``auto`` (triage per page) or ``full`` (every page to
+        the backend). No silent fallback to local mode: a backend failure
+        raises, so a hybrid run can never quietly measure the local engine.
+        """
+        self.hybrid_url = hybrid_url
+        self.hybrid_mode = hybrid_mode
+        self.hybrid_timeout_ms = hybrid_timeout_ms
+        if hybrid_url:
+            self.parser_name = "opendataloader-hybrid"
+
     def parse(self, file_path: Path | str, mime_type: str | None = None) -> ParsedDocument:
         import opendataloader_pdf
 
@@ -115,6 +139,7 @@ class OpenDataLoaderParser:
                 format="json",
                 quiet=True,
                 include_header_footer=True,
+                **self._hybrid_options(),
             )
             tree = json.loads((Path(out_dir) / f"{path.stem}.json").read_text(encoding="utf-8"))
 
@@ -230,7 +255,23 @@ class OpenDataLoaderParser:
             file_type="pdf",
             total_pages=len(ordered),
             pages=ordered,
-            metadata={"source_path": str(path), "intelligence_engine": "opendataloader"},
+            metadata={
+                "source_path": str(path),
+                "intelligence_engine": "opendataloader",
+                "hybrid": bool(self.hybrid_url),
+            },
             parser_name=self.parser_name,
             parsing_duration_ms=(time.perf_counter() - started) * 1000.0,
         )
+
+    def _hybrid_options(self) -> dict[str, str]:
+        if not self.hybrid_url:
+            return {}
+        options = {
+            "hybrid": "docling-fast",
+            "hybrid_mode": self.hybrid_mode,
+            "hybrid_url": self.hybrid_url,
+        }
+        if self.hybrid_timeout_ms:
+            options["hybrid_timeout"] = str(self.hybrid_timeout_ms)
+        return options
