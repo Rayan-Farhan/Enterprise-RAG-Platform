@@ -1,103 +1,1459 @@
 {
-  "version": "2.0",
-  "description": "Ground-truth extraction annotations for representative pages of the real enterprise HR and benefits corpus",
-  "documents": [
+ "version": "3.0",
+ "description": "Hand annotation of 23 stress pages across all 8 corpus PDFs, transcribed from rendered page images (never from parser output or the PDF text layer). Every page carries its complete heading inventory and every table cell by position; pages with complete=true also carry every paragraph verbatim. Full-text reference for all 370 pages is the Tesseract OCR in ground_truth/ocr/.",
+ "conventions": {
+  "headings": "complete per page; run-in labels inside a paragraph are not headings",
+  "tables": "cells[r][c] by visual position; spanning cells hold their text in the first column they cover, the rest are ''",
+  "furniture": "page numbers, running headers and footers are excluded",
+  "levels": "relative within the document"
+ },
+ "documents": [
+  {
+   "filename": "bcbs_dental_booklet_2026.pdf",
+   "total_pages": 34,
+   "annotations": [
     {
-      "filename": "health_plan_at_a_glance_2026.pdf",
-      "total_pages": 11,
-      "annotations": [
-        {
-          "page_number": 2,
-          "headings": [
-            { "text": "University Of North Alabama", "level": 1 },
-            { "text": "BlueCard® PPO", "level": 2 },
-            { "text": "SUMMARY OF COST SHARING PROVISIONS", "level": 3 }
-          ],
-          "paragraphs": [
-            "Benefit payments are based on the amount of the provider's charge that Blue Cross and/or Blue Shield plans recognize for payment of benefits.",
-            "The allowed amount may vary depending upon the type provider and where services are received.",
-            "Calendar year deductibles and out-of-pocket maximums will be calculated in accordance with applicable Federal law.",
-            "Calendar Year Deductible: $550 individual; $1,700 family"
-          ],
-          "tables": [
-            {
-              "table_id": "health_cost_sharing_table",
-              "title": "Summary of Cost Sharing Provisions",
-              "num_rows": 2,
-              "num_cols": 3,
-              "headers": ["BENEFIT", "IN-NETWORK", "OUT-OF-NETWORK"],
-              "cells": [
-                [
-                  "Benefit payments are based on the amount of the provider's charge that Blue Cross and/or Blue Shield plans recognize for payment of benefits. The allowed amount may vary depending upon the type provider and where services are received.",
-                  "",
-                  ""
-                ],
-                [
-                  "SUMMARY OF COST SHARING PROVISIONS",
-                  "",
-                  ""
-                ]
-              ]
-            }
-          ]
-        }
-      ]
+     "page_number": 11,
+     "layout": "two major headings, three long bold sub-headings, small bordered table, bullets",
+     "headings": [
+      {
+       "text": "BENEFIT WAITING PERIODS",
+       "level": 1
+      },
+      {
+       "text": "Benefit Waiting Period for Late Enrollees for Major Dental Services",
+       "level": 2
+      },
+      {
+       "text": "Benefit Waiting Period for Late Enrollees for Orthodontic Dental Services",
+       "level": 2
+      },
+      {
+       "text": "Benefit Waiting Period for Late Enrollees for Annual Maximum Benefits Rollover",
+       "level": 2
+      },
+      {
+       "text": "COST SHARING",
+       "level": 1
+      },
+      {
+       "text": "Calendar Year Deductible",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "dental_booklet_cost_sharing",
+       "title": "Cost sharing",
+       "header_rows": 0,
+       "cells": [
+        [
+         "Calendar Year Deductible",
+         "$25 (three per family)"
+        ],
+        [
+         "Calendar Year Maximum Benefits",
+         "$1,000"
+        ]
+       ],
+       "num_rows": 2,
+       "num_cols": 2
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. Page number '7' is furniture."
     },
     {
-      "filename": "dental_plan_at_a_glance_2026.pdf",
-      "total_pages": 4,
-      "annotations": [
-        {
-          "page_number": 2,
-          "headings": [
-            { "text": "PREFERRED DENTAL NETWORK", "level": 1 }
-          ],
-          "paragraphs": [
-            "Blue Cross and Blue Shield of Alabama's Dental Network is a statewide dental network.",
-            "This managed care program is designed to promote quality and cost effective dental care.",
-            "Currently more than 2,800 dentists, approximately 93% of the dentists in Alabama, have joined this program."
-          ]
-        }
-      ]
+     "page_number": 13,
+     "layout": "three small header-row tables with identical headers, interleaved with bullet lists",
+     "headings": [
+      {
+       "text": "Basic Dental Benefits",
+       "level": 2
+      },
+      {
+       "text": "Major Dental Benefits",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "dental_basic",
+       "title": "Basic dental benefits",
+       "header_rows": 1,
+       "cells": [
+        [
+         "SERVICE",
+         "BENEFIT"
+        ],
+        [
+         "Restorative Services",
+         "80%, subject to the calendar year deductible"
+        ]
+       ],
+       "num_rows": 2,
+       "num_cols": 2
+      },
+      {
+       "table_id": "dental_supplemental",
+       "title": "Supplemental services",
+       "header_rows": 1,
+       "cells": [
+        [
+         "SERVICE",
+         "BENEFIT"
+        ],
+        [
+         "Supplemental Services",
+         "80%, subject to the calendar year deductible"
+        ]
+       ],
+       "num_rows": 2,
+       "num_cols": 2
+      },
+      {
+       "table_id": "dental_major",
+       "title": "Major dental benefits",
+       "header_rows": 1,
+       "cells": [
+        [
+         "SERVICE",
+         "BENEFIT"
+        ],
+        [
+         "Prosthetic Services Note: No benefits are available for late enrollees until the member has been covered under the plan for a continuous 365 day waiting period",
+         "50%, subject to the calendar year deductible"
+        ]
+       ],
+       "num_rows": 2,
+       "num_cols": 2
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. Three separate tables with identical header rows; a parser that merges them, or drops the repeated headers, loses cells. 'Limits on prosthetic services:' is a lead-in sentence, not a heading. Page number '9' is furniture."
     },
     {
-      "filename": "staff_handbook.pdf",
-      "total_pages": 56,
-      "annotations": [
-        {
-          "page_number": 3,
-          "headings": [
-            { "text": "MESSAGE FROM THE PRESIDENT", "level": 1 }
-          ],
-          "paragraphs": [
-            "It is my pleasure to offer this introduction to the Staff Handbook for the University of North Alabama. This is an important document.",
-            "As a member of the UNA family, is important that you have easy access to up-to-date information regarding policies, responsibilities, and benefits that relate to your employment.",
-            "We all take pride in the strong system of shared governance that exists at UNA. But shared governance can never be taken for granted."
-          ]
-        }
-      ]
-    },
-    {
-      "filename": "organizational_structure.pdf",
-      "total_pages": 1,
-      "annotations": [
-        {
-          "page_number": 1,
-          "headings": [
-            { "text": "University of North Alabama", "level": 1 },
-            { "text": "Organizational Structure", "level": 2 }
-          ],
-          "paragraphs": [
-            "Board of Trustees",
-            "President",
-            "Division of University Advancement",
-            "Division of Athletics",
-            "Division of Student Affairs",
-            "Division of Business & Financial Affairs",
-            "Division of Academic Affairs"
-          ]
-        }
-      ]
+     "page_number": 19,
+     "layout": "alphabetical exclusions list: single-letter dividers, entries with bold in-line keywords",
+     "headings": [
+      {
+       "text": "DENTAL BENEFIT EXCLUSIONS",
+       "level": 1
+      },
+      {
+       "text": "A",
+       "level": 2
+      },
+      {
+       "text": "B",
+       "level": 2
+      },
+      {
+       "text": "C",
+       "level": 2
+      },
+      {
+       "text": "D",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [],
+     "figures": 0,
+     "complete": false,
+     "ambiguous": [
+      "The single-letter dividers A-D are annotated as level-2 headings (large type, own line, navigational role). Treating them as non-headings is defensible; flagged for review."
+     ],
+     "notes": "Structure only. Bold in-line keywords ('Anesthetic', 'Appliances', 'Cone beam', ...) are emphasis inside entries, not headings. Page number '15' is furniture."
     }
-  ]
+   ]
+  },
+  {
+   "filename": "bcbs_health_booklet_2026.pdf",
+   "total_pages": 67,
+   "annotations": [
+    {
+     "page_number": 6,
+     "layout": "booklet prose: bordered bilingual notice box, sub-headings, bullet list",
+     "headings": [
+      {
+       "text": "OVERVIEW OF THE PLAN",
+       "level": 1
+      },
+      {
+       "text": "Purpose of the Plan",
+       "level": 2
+      },
+      {
+       "text": "Using myBlueCross to Get More Information",
+       "level": 2
+      },
+      {
+       "text": "BlueCare Health Advocate",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. The bordered English/Spanish notice is a framed text box, not a table; a parser reporting it as a table scores a false table here. Group number '73389/000' top right and page number '1' are page furniture."
+    },
+    {
+     "page_number": 17,
+     "layout": "prose and bullets, a major section heading, a small bordered two-column table",
+     "headings": [
+      {
+       "text": "Leaves of Absence",
+       "level": 2
+      },
+      {
+       "text": "COST SHARING",
+       "level": 1
+      },
+      {
+       "text": "Calendar Year Deductible",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "health_booklet_cost_sharing",
+       "title": "Cost sharing",
+       "header_rows": 0,
+       "cells": [
+        [
+         "Calendar Year Deductible",
+         "$550 individual ($1,700 family)"
+        ],
+        [
+         "Calendar Year Out-of-Pocket Maximum",
+         "$650 individual"
+        ]
+       ],
+       "num_rows": 2,
+       "num_cols": 2
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. The table's first value spans two lines within one cell. Page number '12' is page furniture."
+    },
+    {
+     "page_number": 23,
+     "layout": "shaded 'Attention' call-out boxes and a bordered three-column benefits table with a header row",
+     "headings": [
+      {
+       "text": "HEALTH BENEFITS",
+       "level": 1
+      },
+      {
+       "text": "Inpatient Hospital Benefits",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "health_booklet_inpatient",
+       "title": "Inpatient hospital benefits",
+       "header_rows": 1,
+       "cells": [
+        [
+         "SERVICE OR SUPPLY",
+         "IN-NETWORK PLAN PAYS",
+         "OUT-OF-NETWORK PLAN PAYS"
+        ],
+        [
+         "First 365 days of care during each confinement in a general hospital or psychiatric specialty hospital (combined in-network and out-of-network)",
+         "100% of the allowed amount, subject to a $450 deductible per admission and a $80 per day copayment beginning with the 2nd through the 6th day",
+         "80% of the allowed amount, subject to a $600 deductible per admission"
+        ],
+        [
+         "Days of confinement in a general hospital or psychiatric specialty hospital extending beyond the 365-day benefit maximum",
+         "80% of the allowed amount, subject to the calendar year deductible Exception: Benefits for days exceeding 365 days for mental health and substance abuse admissions will be the same as the benefits shown above for the first 365 days",
+         "80% of the allowed amount, subject to the calendar year deductible Exception: Benefits for days exceeding 365 days for mental health and substance abuse admissions will be the same as the benefits shown above for the first 365 days"
+        ],
+        [
+         "$5 per day allowance for the difference between private and semi-private room rate",
+         "80% of the allowed amount, subject to the calendar year deductible",
+         "80% of the allowed amount, subject to the calendar year deductible"
+        ]
+       ],
+       "num_rows": 4,
+       "num_cols": 3
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. The five shaded 'Attention:' boxes are single-cell call-outs, not data tables; the bold run-in 'Attention:' is not a heading. Repeated cells ('80% of the allowed amount, subject to the calendar year deductible' x4) make unique-string cell metrics misleading. Page number '18' is furniture."
+    }
+   ]
+  },
+  {
+   "filename": "dental_plan_at_a_glance_2026.pdf",
+   "total_pages": 4,
+   "annotations": [
+    {
+     "page_number": 2,
+     "layout": "white-on-black banner title, prose, italic sub-heading, spaced bullet list, bold-italic closing line",
+     "headings": [
+      {
+       "text": "PREFERRED DENTAL",
+       "level": 1
+      },
+      {
+       "text": "Dental Network Provisions:",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. The visible banner reads 'PREFERRED DENTAL'; the PDF text layer carries extra, overprinted copies of the banner text ('PREFERRED DENTAL NETWORK ...'), which parsers reading the text layer reproduce and the page image does not show. The bold-italic closing line about the managed dental network is emphasis, not a heading."
+    },
+    {
+     "page_number": 3,
+     "layout": "two-column benefit matrix with black band rows; band sections hold bold lead-ins and bullet lists in one spanning cell",
+     "headings": [
+      {
+       "text": "University of North Alabama",
+       "level": 1
+      },
+      {
+       "text": "Dental Benefits",
+       "level": 2
+      },
+      {
+       "text": "Effective March 1, 2026",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "dental_glance_matrix",
+       "title": "Dental benefits matrix",
+       "header_rows": 0,
+       "spanning_rows": [
+        0,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+       ],
+       "cells": [
+        [
+         "GENERAL PROVISIONS",
+         ""
+        ],
+        [
+         "Deductible",
+         "$25 deductible per member per calendar year; maximum of 3 deductibles per family each calendar year."
+        ],
+        [
+         "Maximum",
+         "$1,000 per member each calendar year."
+        ],
+        [
+         "DIAGNOSTIC AND PREVENTIVE (Exams and Cleanings)",
+         ""
+        ],
+        [
+         "Covered at 100%, subject to the deductible. Includes: Dental exams up to twice per benefit period. Full mouth x-rays, one set during any 36 consecutive months. Bitewing x-rays, up to twice per benefit period. Other dental x-rays, used to diagnose a specific condition. Routine cleanings, twice per benefit period. Tooth sealants on teeth numbers 3, 14, 19, and 30, limited to one application per tooth each 48 months. Benefits are limited to a maximum payment of $20 per tooth. Limited to the first permanent molars of children through age 13. Fluoride treatment for children through age 18 twice per benefit period. Space maintainers (not made of precious metals) that replace prematurely lost teeth for children through age 18.",
+         ""
+        ],
+        [
+         "RESTORATIVE (Fillings and Root Canals)",
+         ""
+        ],
+        [
+         "Covered at 80%, subject to the deductible. Includes: Fillings made of silver amalgam and synthetic tooth color materials. Simple tooth extractions. Direct pulp capping, removal of pulp and root canal treatment. Repairs to removable dentures. Emergency treatment for pain.",
+         ""
+        ],
+        [
+         "SUPPLEMENTAL (Oral Surgery and Anesthesia)",
+         ""
+        ],
+        [
+         "Covered at 80%, subject to the deductible. Includes: Oral surgery for tooth extractions and impacted teeth. General anesthesia given for oral or dental surgery. This means drugs injected or inhaled for relaxation or to lessen pain, or to make unconscious, but not analgesics, drugs given by local infiltration, or nitrous oxide. Treatment of the root tip of the tooth including its removal.",
+         ""
+        ],
+        [
+         "PROSTHETIC (Crowns and Dentures)",
+         ""
+        ],
+        [
+         "Covered at 50%, subject to the deductible. Includes: Full or partial dentures. Fixed or removable bridges. Inlays, onlays, or crowns to restore diseased or accidentally broken teeth, if less expensive fillings are not adequate.",
+         ""
+        ],
+        [
+         "PERIODONTIC (Gum Disease)",
+         ""
+        ],
+        [
+         "Covered at 50%, subject to the deductible. Includes: Periodontic exams twice each 12 months. Removal of diseased gum tissue and reconstructing gums. Removal of diseased bone. Reconstruction of gums and mucous membranes by surgery. Removing plaque and calculus below the gum line for periodontal disease.",
+         ""
+        ]
+       ],
+       "num_rows": 13,
+       "num_cols": 2
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. Rows in 'spanning_rows' (0-based) span both columns. 'This is not a contract...' line under the table and the footer are outside the table.",
+     "ambiguous": [
+      "Band rows (GENERAL PROVISIONS, DIAGNOSTIC AND PREVENTIVE, ...) are annotated as table rows, not headings; a parser that emits them as headings is not penalised on heading precision for these five strings."
+     ]
+    }
+   ]
+  },
+  {
+   "filename": "health_plan_at_a_glance_2026.pdf",
+   "total_pages": 11,
+   "annotations": [
+    {
+     "page_number": 2,
+     "layout": "full-page three-column benefits grid with full-width black band rows and spanning note rows",
+     "headings": [
+      {
+       "text": "University Of North Alabama",
+       "level": 1
+      },
+      {
+       "text": "BlueCard® PPO",
+       "level": 2
+      },
+      {
+       "text": "Effective March 01, 2026",
+       "level": 2
+      }
+     ],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "health_glance_p2",
+       "title": "Benefits grid, page 1",
+       "header_rows": 1,
+       "spanning_rows": [
+        1,
+        2,
+        3,
+        4,
+        7,
+        8,
+        9,
+        12,
+        13,
+        14
+       ],
+       "cells": [
+        [
+         "BENEFIT",
+         "IN-NETWORK",
+         "OUT-OF-NETWORK"
+        ],
+        [
+         "Benefit payments are based on the amount of the provider's charge that Blue Cross and/or Blue Shield plans recognize for payment of benefits. The allowed amount may vary depending upon the type provider and where services are received.",
+         "",
+         ""
+        ],
+        [
+         "SUMMARY OF COST SHARING PROVISIONS",
+         "",
+         ""
+        ],
+        [
+         "(Includes Mental Health Disorders and Substance Abuse)",
+         "",
+         ""
+        ],
+        [
+         "Calendar year deductibles and out-of-pocket maximums will be calculated in accordance with applicable Federal law.",
+         "",
+         ""
+        ],
+        [
+         "Calendar Year Deductible",
+         "$550 individual; $1,700 family",
+         ""
+        ],
+        [
+         "Calendar Year Out-of-Pocket Maximum Applies to: Other Covered Services (excluding out-of-network occupational therapy, physical therapy, speech therapy and DME in Alabama) Home Health and Hospice Point-of-Sale Prescription Drugs",
+         "$650 individual plus calendar year deductible; Only the coinsurance amounts you pay for the listed services will apply to the maximum. Fixed copays do not apply to the maximum. After you reach the Calendar Year Out-of-Pocket Maximum, applicable expenses are covered at 100% of the allowed amount for the remainder of the calendar year.",
+         ""
+        ],
+        [
+         "INPATIENT HOSPITAL AND PHYSICIAN BENEFITS",
+         "",
+         ""
+        ],
+        [
+         "(Includes Mental Health Disorders and Substance Abuse)",
+         "",
+         ""
+        ],
+        [
+         "Precertification is required for inpatient admissions (except medical emergency services and maternity and as required by Federal law); notification within 48 hours for medical emergencies. Generally, if precertification is not obtained, no benefits are available. Call 1-800-248-2342 (toll-free) for precertification.",
+         "",
+         ""
+        ],
+        [
+         "Inpatient Hospital Note: Inpatient hospital deductibles and copays do not apply to the Calendar Year Out-of-Pocket Maximum.",
+         "Covered at 100% of the allowed amount, after $80.00 daily hospital copay days 2-6 for each admission and $450.00 per admission deductible",
+         "Covered at 80% of the allowed amount, after $600.00 per admission deductible Note: In Alabama, available only for medical emergency services and accidental injury"
+        ],
+        [
+         "Inpatient Physician Visits and Consultations",
+         "Covered at 100% of the allowed amount, subject to calendar year deductible Mental Health Disorders and Substance Abuse Services covered at 100% of the allowed amount, no copay or deductible",
+         "Covered at 80% of the allowed amount, subject to calendar year deductible In Alabama, covered at 50% of the allowed amount, subject to calendar year deductible Mental Health Disorders and Substance Abuse Services covered at 80% of the allowed amount, no copay or deductible"
+        ],
+        [
+         "OUTPATIENT HOSPITAL BENEFITS",
+         "",
+         ""
+        ],
+        [
+         "(Includes Mental Health Disorders and Substance Abuse)",
+         "",
+         ""
+        ],
+        [
+         "Precertification is required for some outpatient hospital benefits; please see benefit booklet. Precertification is also required for provider-administered drugs; visit AlabamaBlue.com/ProviderAdministeredPrecertificationDrugList. If precertification is not obtained, no benefits are available.",
+         "",
+         ""
+        ],
+        [
+         "Outpatient Surgery (Including Ambulatory Surgical Centers)",
+         "Covered at 100% of the allowed amount, after $300.00 hospital copay",
+         "Covered at 80% of the allowed amount, subject to calendar year deductible In Alabama, not covered"
+        ]
+       ],
+       "num_rows": 16,
+       "num_cols": 3
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. Rows listed in 'spanning_rows' (0-based) are full-width; their text sits in column 0. Row 5's value spans columns 1-2 (deductible and OOP maximum apply to both networks). Footer 'Group# 73389 / 1 / 01/20/2026 YW / MRT-MTX-26' is furniture.",
+     "ambiguous": [
+      "The three centred title lines could equally be read as one multi-line title; annotated as one level-1 and two level-2 headings."
+     ]
+    },
+    {
+     "page_number": 3,
+     "layout": "continuation of the three-column benefits grid; repeated header row; one band section",
+     "headings": [],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "health_glance_p3",
+       "title": "Benefits grid, page 2",
+       "header_rows": 1,
+       "spanning_rows": [
+        6,
+        7,
+        8
+       ],
+       "cells": [
+        [
+         "BENEFIT",
+         "IN-NETWORK",
+         "OUT-OF-NETWORK"
+        ],
+        [
+         "Emergency Room (Medical Emergency)",
+         "Covered at 100% of the allowed amount, after $300.00 hospital copay",
+         "Covered at 100% of the allowed amount, after $300.00 hospital copay Mental Health Disorders and Substance Abuse Services covered at 100% of the allowed amount, after $300.00 hospital copay"
+        ],
+        [
+         "Emergency Room (Accident)",
+         "Covered at 100% of the allowed amount, no copay or deductible",
+         "Covered at 100% of the allowed amount, no copay or deductible"
+        ],
+        [
+         "Emergency Room (Physician)",
+         "Covered at 100% of the allowed amount, after $55.00 physician copay",
+         "Covered at 100% of the allowed amount, after $55.00 physician copay Mental Health Disorders and Substance Abuse Services covered at 100% of the allowed amount, after $55.00 physician copay"
+        ],
+        [
+         "Chemotherapy, Dialysis, IV Therapy, Outpatient Diagnostic Lab, Pathology, Radiation Therapy & X-ray Note: The first covered mammogram each calendar year is not subject to the hospital copay",
+         "Covered at 100% of the allowed amount, no copay or deductible",
+         "Covered at 80% of the allowed amount, subject to calendar year deductible In Alabama, not covered"
+        ],
+        [
+         "Intensive Outpatient Services and Partial Hospitalization for Mental Health Disorders and Substance Abuse Services",
+         "Covered at 100% of the allowed amount, after $55.00 daily hospital copay",
+         "Covered at 80% of the allowed amount, subject to calendar year deductible In Alabama, not covered"
+        ],
+        [
+         "PHYSICIAN BENEFITS",
+         "",
+         ""
+        ],
+        [
+         "(Includes Mental Health Disorders and Substance Abuse)",
+         "",
+         ""
+        ],
+        [
+         "Precertification is required for some physician benefits; please see benefit booklet. Precertification is also required for provider-administered drugs; visit AlabamaBlue.com/ProviderAdministeredPrecertificationDrugList. If precertification is not obtained, no benefits are available.",
+         "",
+         ""
+        ],
+        [
+         "Office Visits and Consultations",
+         "Covered at 100% of the allowed amount, after $40.00 primary care physician copay or $55.00 specialist physician copay",
+         "Covered at 80% of the allowed amount, subject to calendar year deductible In Alabama, covered at 50% of the allowed amount, subject to calendar year deductible"
+        ],
+        [
+         "Chemotherapy, Diagnostic Lab, Dialysis, IV Therapy, Pathology, Radiation Therapy & X-ray",
+         "Covered at 100% of the allowed amount, no copay or deductible",
+         "Covered at 80% of the allowed amount, subject to calendar year deductible In Alabama, covered at 50% of the allowed amount, subject to calendar year deductible"
+        ]
+       ],
+       "num_rows": 11,
+       "num_cols": 3
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. Rows 6-8 (0-based) are full-width; their text sits in column 0. Footer furniture excluded."
+    },
+    {
+     "page_number": 6,
+     "layout": "one tall table row whose cells hold bullet lists, bold URLs and tier sub-labels",
+     "headings": [],
+     "paragraphs": [],
+     "tables": [
+      {
+       "table_id": "health_glance_p6",
+       "title": "Prescription drug benefits",
+       "header_rows": 1,
+       "spanning_rows": [
+        1,
+        2,
+        3
+       ],
+       "cells": [
+        [
+         "BENEFIT",
+         "IN-NETWORK",
+         "OUT-OF-NETWORK"
+        ],
+        [
+         "PRESCRIPTION DRUG BENEFITS",
+         "",
+         ""
+        ],
+        [
+         "(Includes Mental Health Disorders and Substance Abuse)",
+         "",
+         ""
+        ],
+        [
+         "Precertification is required for some drugs; if precertification is not obtained, no benefits are available.",
+         "",
+         ""
+        ],
+        [
+         "Retail Point-of-Sale Prescription Drug Benefits The retail pharmacy network for the plan is Prime Participating Retail Network Locate a Prime Participating Retail Network pharmacy at AlabamaBlue.com/PrimeParticipatingPharmacyLocator Member must file claim with authorization number for reimbursement Maintenance drugs – up to a 30-day supply View the maintenance drug list that applies to the plan at AlabamaBlue.com/MaintenanceDrugList Prescription drugs (other than maintenance drugs) - up to a 30-day supply Some copays combined for diabetic supplies View the Standard drug list that applies to the plan at AlabamaBlue.com/StandardDrugList The only in-network pharmacy for some specialty drugs is the Pharmacy Select Network Specialty drugs can be dispensed for up to a 30-day supply View the Specialty Drug List at AlabamaBlue.com/SelfAdministeredSpecialtyDrugList Some immunizations may be received from an in-network pharmacy that participates in the Pharmacy Vaccine Network. A list of the eligible vaccines these pharmacies may provide can be found at: AlabamaBlue.com/VaccineNetworkDrugList.",
+         "Tier 1 Drugs: Covered at 100% of the allowed amount; no copay or deductible Tier 2 Drugs: Covered at 80% of the allowed amount subject to the calendar year deductible Tier 3 Drugs: Covered at 80% of the allowed amount subject to the calendar year deductible Covered Insulin Products: $99.00 maximum cost share per 30-day supply.",
+         "Not Covered"
+        ]
+       ],
+       "num_rows": 5,
+       "num_cols": 3
+      }
+     ],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only. Rows 1-3 (0-based) are full-width bands. Bold 'Tier N Drugs:' labels are in-cell emphasis, not headings. URLs wrap across lines inside cells; text matching should join them. Footer furniture excluded."
+    }
+   ]
+  },
+  {
+   "filename": "organizational_structure.pdf",
+   "total_pages": 1,
+   "annotations": [
+    {
+     "page_number": 1,
+     "layout": "landscape org chart: boxed nodes joined by connector lines, logo and two-line title",
+     "headings": [
+      {
+       "text": "University of North Alabama",
+       "level": 1
+      },
+      {
+       "text": "Organizational Structure",
+       "level": 1
+      }
+     ],
+     "paragraphs": [
+      "Board of Trustees",
+      "President",
+      "Office of the General Counsel",
+      "Ombudsman",
+      "University Priorities",
+      "Governmental Relations & Regulatory Affairs",
+      "Title IX",
+      "Faculty Athletics Representative",
+      "Division of Business & Financial Affairs",
+      "Accounting Services",
+      "Athletics & Budgeting",
+      "Auditing & Finance",
+      "Facilities Administration & Planning",
+      "Human Resources, Payroll, & Benefits",
+      "Information Technology Services",
+      "Division of University Advancement",
+      "Alumni Relations & Annual Giving",
+      "Development Services",
+      "Financial & Database Services",
+      "Donor Relations",
+      "University Media & Public Relations",
+      "Division of Athletics",
+      "Athletic Student Success",
+      "Athletic Business Affairs/ Senior Woman Administrator",
+      "External Operations",
+      "Athletic Training",
+      "Strength & Conditioning",
+      "Internal Operations",
+      "Compliance & Student-Athlete Success",
+      "Athletic Communication",
+      "Athletics Development",
+      "Baseball",
+      "Cross Country",
+      "Football",
+      "Men's Basketball",
+      "Women's Basketball",
+      "Men's Golf",
+      "Women's Golf",
+      "Tennis Programs",
+      "Men's Tennis",
+      "Softball",
+      "Soccer",
+      "Beach Volleyball",
+      "Indoor Volleyball",
+      "Division of Student Affairs",
+      "Associate Vice President",
+      "University Health & Well-Being",
+      "Associate Vice President/ Dean of Students",
+      "Assistant Dean of Students for Housing & Residence Life",
+      "Assistant Dean of Students/Director, Student Conduct",
+      "Division of Academic Affairs",
+      "Anderson College of Nursing & Health Professions",
+      "College of Arts, Sciences, & Engineering",
+      "Sanders College of Business & Technology",
+      "College of Education & Human Sciences",
+      "Delores & Weldon Cole Honors College",
+      "Deputy Provost",
+      "Associate Provost, Academic Excellence",
+      "Enrollment Management",
+      "International Affairs"
+     ],
+     "tables": [],
+     "figures": 1,
+     "org_chart": [
+      {
+       "label": "Board of Trustees",
+       "parent": null
+      },
+      {
+       "label": "President",
+       "parent": "Board of Trustees"
+      },
+      {
+       "label": "Office of the General Counsel",
+       "parent": "President"
+      },
+      {
+       "label": "Ombudsman",
+       "parent": "President"
+      },
+      {
+       "label": "University Priorities",
+       "parent": "President"
+      },
+      {
+       "label": "Governmental Relations & Regulatory Affairs",
+       "parent": "President"
+      },
+      {
+       "label": "Title IX",
+       "parent": "Governmental Relations & Regulatory Affairs"
+      },
+      {
+       "label": "Faculty Athletics Representative",
+       "parent": "President"
+      },
+      {
+       "label": "Division of Business & Financial Affairs",
+       "parent": "President"
+      },
+      {
+       "label": "Accounting Services",
+       "parent": "Division of Business & Financial Affairs"
+      },
+      {
+       "label": "Athletics & Budgeting",
+       "parent": "Division of Business & Financial Affairs"
+      },
+      {
+       "label": "Auditing & Finance",
+       "parent": "Division of Business & Financial Affairs"
+      },
+      {
+       "label": "Facilities Administration & Planning",
+       "parent": "Division of Business & Financial Affairs"
+      },
+      {
+       "label": "Human Resources, Payroll, & Benefits",
+       "parent": "Division of Business & Financial Affairs"
+      },
+      {
+       "label": "Information Technology Services",
+       "parent": "Division of Business & Financial Affairs"
+      },
+      {
+       "label": "Division of University Advancement",
+       "parent": "President"
+      },
+      {
+       "label": "Alumni Relations & Annual Giving",
+       "parent": "Division of University Advancement"
+      },
+      {
+       "label": "Development Services",
+       "parent": "Division of University Advancement"
+      },
+      {
+       "label": "Financial & Database Services",
+       "parent": "Division of University Advancement"
+      },
+      {
+       "label": "Donor Relations",
+       "parent": "Division of University Advancement"
+      },
+      {
+       "label": "University Media & Public Relations",
+       "parent": "Division of University Advancement"
+      },
+      {
+       "label": "Division of Athletics",
+       "parent": "President"
+      },
+      {
+       "label": "Athletic Student Success",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Athletic Business Affairs/ Senior Woman Administrator",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "External Operations",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Athletic Training",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Strength & Conditioning",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Internal Operations",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Compliance & Student-Athlete Success",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Athletic Communication",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Athletics Development",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Baseball",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Cross Country",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Football",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Men's Basketball",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Women's Basketball",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Men's Golf",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Women's Golf",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Tennis Programs",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Men's Tennis",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Softball",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Soccer",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Beach Volleyball",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Indoor Volleyball",
+       "parent": "Division of Athletics"
+      },
+      {
+       "label": "Division of Student Affairs",
+       "parent": "President"
+      },
+      {
+       "label": "Associate Vice President",
+       "parent": "Division of Student Affairs"
+      },
+      {
+       "label": "University Health & Well-Being",
+       "parent": "Division of Student Affairs"
+      },
+      {
+       "label": "Associate Vice President/ Dean of Students",
+       "parent": "Division of Student Affairs"
+      },
+      {
+       "label": "Assistant Dean of Students for Housing & Residence Life",
+       "parent": "Associate Vice President/ Dean of Students"
+      },
+      {
+       "label": "Assistant Dean of Students/Director, Student Conduct",
+       "parent": "Associate Vice President/ Dean of Students"
+      },
+      {
+       "label": "Division of Academic Affairs",
+       "parent": "President"
+      },
+      {
+       "label": "Anderson College of Nursing & Health Professions",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "College of Arts, Sciences, & Engineering",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "Sanders College of Business & Technology",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "College of Education & Human Sciences",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "Delores & Weldon Cole Honors College",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "Deputy Provost",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "Associate Provost, Academic Excellence",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "Enrollment Management",
+       "parent": "Division of Academic Affairs"
+      },
+      {
+       "label": "International Affairs",
+       "parent": "Division of Academic Affairs"
+      }
+     ],
+     "complete": true,
+     "notes": "Every box label is listed under 'paragraphs' (so text recall covers them) and again under 'org_chart' with its parent box, recovered from the connector lines. No current parser emits the hierarchy; it is recorded for the Stage 9 visual-structure work. The university seal is the one raster figure; the chart itself is vector drawing.",
+     "ambiguous": [
+      "Under Division of Athletics the two columns of boxes share one connector; all 22 are annotated as direct reports of the division. Under Academic Affairs the right-hand column (Deputy Provost ... International Affairs) may report through the Deputy Provost; annotated as direct reports."
+     ]
+    }
+   ]
+  },
+  {
+   "filename": "staff_handbook.pdf",
+   "total_pages": 56,
+   "annotations": [
+    {
+     "page_number": 5,
+     "layout": "section divider: section contents list with a rotated title",
+     "headings": [
+      {
+       "text": "Employment Status and Classification",
+       "level": 1
+      }
+     ],
+     "paragraphs": [
+      "Employment Status and Classification",
+      "Status Classifications for Staff Positions",
+      "Provisional Employee",
+      "Full-Time Regular Employee",
+      "Half-Time Regular Employee",
+      "Three-Quarters' Time Regular Employee",
+      "Part-Time Regular Employee",
+      "Full-Time Temporary Employee",
+      "Part-Time Temporary Employee",
+      "Exempt or Non-Exempt",
+      "Service Date",
+      "Provisional Period",
+      "Job Changes",
+      "Separation of Employment"
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "The list is the section's contents; the rotated text on the right is the section title."
+    },
+    {
+     "page_number": 6,
+     "layout": "dense prose with run-in bold-underlined definition labels",
+     "headings": [
+      {
+       "text": "EMPLOYMENT STATUS AND CLASSIFICATION",
+       "level": 1
+      },
+      {
+       "text": "Status Classifications for Staff Positions",
+       "level": 2
+      },
+      {
+       "text": "Exempt or Non-Exempt (Fair Labor Standards Act Classifications)",
+       "level": 2
+      }
+     ],
+     "paragraphs": [
+      "All staff employees are classified at the time of employment as: (1) provisional; (2) full-time regular; (3) half-time regular; (4) three-quarters' time regular; (5) part-time regular; (6) full-time temporary; and (7) part-time temporary. Each category of employment is entitled to different levels of benefits as explained in the University's Employee Policy Manual & Handbook.",
+      "Provisional Employee: The first three calendar months of a non-exempt regular employee's employment is considered a provisional period.",
+      "Full-Time Regular Employee: An employee who has an indefinite appointment and works at least 40 hours per week for generally twelve months per year.",
+      "Half-Time Regular Employee: An employee who has an indefinite appointment and works an average of 20 to 29 hours per week.",
+      "Three-Quarters' Time Regular Employee: An employee who has an indefinite appointment and works an average of 30 to 39 hours per week.",
+      "Part-Time Regular Employee: An employee who has an indefinite appointment and works an average of 19 hours or less per week.",
+      "Full-Time Temporary Employee: An employee who is employed for a specific period of time or for the duration of a project or activity. The employee does not have an indefinite appointment and works at least 40 hours per week.",
+      "Part-Time Temporary Employee: An employee who works an irregular schedule or varied hours for a specified period and does not meet the requirements established for a full-time temporary employee. The part-time temporary employee may be employed for: (1) three-quarters' time (30 to 39 hours per week); (2) half-time (20 to 29 hours per week); or less than half-time (19 hours per week or less).",
+      "*In compliance with the Affordable Care Act, employees in this classification could be eligible for health insurance as part of the University's group health plan.",
+      "Staff employees are classified as exempt or non-exempt according to the guidelines established by the Fair Labor Standards Act (FLSA). The Office of Human Resources is responsible for classifying positions according to FLSA guidelines.",
+      "Exempt: An employee is considered exempt if he/she is not subject to the timekeeping and other provisions of the FLSA because of the salary level and the nature of the work. Exempt positions include those that are executive, administrative, and professional in nature and that meet the compensation threshold required by the FLSA.",
+      "Non-Exempt: An employee is considered non-exempt if he/she is subject to the timekeeping and other wage and hour provisions of the FLSA. Non-exempt positions generally are those that support an exempt position and may be more routine and have fewer decision-making requirements than an exempt position."
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "Run-in labels such as 'Provisional Employee:' are part of their paragraph, not headings; a parser that types those paragraphs as headings scores false-positive headings here."
+    },
+    {
+     "page_number": 13,
+     "layout": "dense prose, four heading levels including stand-alone sub-sub-headings",
+     "headings": [
+      {
+       "text": "WAGE AND SALARY ADMINISTRATION",
+       "level": 1
+      },
+      {
+       "text": "Records and Responsibilities",
+       "level": 2
+      },
+      {
+       "text": "Hours of Work",
+       "level": 2
+      },
+      {
+       "text": "Breaks and Meal Period:",
+       "level": 3
+      },
+      {
+       "text": "Breaks",
+       "level": 4
+      },
+      {
+       "text": "Meal Period",
+       "level": 4
+      }
+     ],
+     "paragraphs": [
+      "The University of North Alabama complies with the provisions of the Fair Labor Standards Act (FLSA) that apply to public universities.",
+      "According to the FLSA, non-exempt employees are required to record their time worked for each pay period. Therefore, each non-exempt employee is responsible for submitting either an electronic timesheet or, for specifically designated employees, a biweekly timecard for hours worked and/or leave taken for each two-week payroll cycle as tracked in the timeclock software, currently Novatime. Supervisors are responsible for verifying, correcting, and/or approving the time of the non-exempt employees for whom they are responsible.",
+      "Normal working hours for university employees are from 8:00 a.m. to 4:30 p.m., Monday through Friday, exclusive of holidays. Working hours for some departments and/or sections of departments may vary depending on the type of services offered.",
+      "Time is rounded off to the nearest one-quarter hour. All eight-hour work periods should begin no earlier than seven minutes prior to the start of the workday and end no later than seven minutes after the end of the workday.",
+      "Pre-shift and post-shift activities, which are an integral part of the employee's principal activities, must be included in the hours worked if such activity requires more than seven minutes prior to or after the shift. If such time is needed, it must be authorized by the supervisor.",
+      "Work Cycle: The FLSA takes a single workweek as its standard and does not permit averaging of hours over two or more weeks with the exception of that for University Police Officers.",
+      "For all non-exempt employees, the normal university workweek is 40 hours, measured from 12:01 a.m. Tuesday to 12:00 p.m. the following Monday, except for University Police Officers whose workweeks are defined according to their shift policy.",
+      "Employees who work eight hours per day are authorized one paid 30-minute break per day or the fractional equivalent for each workday of less than eight hours. By prior arrangement between the employee and his/her supervisor, the break may be taken with the lunch break so as to allow up to one hour for lunch and personal business. The break must be counted as time worked. Work during the break time is not work time in excess of the eight-hour workday.",
+      "Employees who work eight hours per day are given 30 minutes of unpaid time per day for a meal period. With supervisory approval, this meal period can be combined with the 30-minute paid break time to extend the meal period to one hour. Working during the meal break is considered compensable and must be approved by the supervisor prior to being worked. In order to qualify as a bona fide meal period under the provisions of the FLSA, the period must be 30 minutes or more in duration and the employee must be completely relieved of their duty. Therefore, it is advised that an employee take their meal break away from their workstation."
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": ""
+    },
+    {
+     "page_number": 21,
+     "layout": "prose with a borderless two-column holiday table",
+     "headings": [
+      {
+       "text": "PAID AND UNPAID TIME OFF WORK",
+       "level": 1
+      },
+      {
+       "text": "Paid Holidays",
+       "level": 2
+      },
+      {
+       "text": "General Holiday Policies",
+       "level": 2
+      }
+     ],
+     "paragraphs": [
+      "Each year, the Office of the President distributes a list of holidays that will be observed for the upcoming academic year. These holidays are listed on the Human Resources website. Staff employees typically receive the following holidays:",
+      "Generally, holidays that fall on Saturday are observed on Friday, and those that fall on Sunday are observed on Monday.",
+      "A non-exempt employee who is required to work on a scheduled holiday is compensated for hours actually worked on that day in addition to a maximum of eight hours of pay or compensatory time at the regular rate (not at one and a half times the rate) for the holiday.",
+      "Part-time, regular employees are entitled to a paid holiday equal to their regularly scheduled number of hours. Persons who work part of the year or work on a regular part-time basis are not paid for holidays which fall within their off periods or nonscheduled workdays.",
+      "A full-time regular employee, whose normal workweek includes Saturday and Sunday and who is given two days off during the week, is given credit for eight hours of holiday time if a holiday falls during his/her normally scheduled off-time.",
+      "An employee who is scheduled to work on a holiday is eligible for equal time off at a later date if he/she is scheduled to work on a holiday. Under certain circumstances, and upon the recommendation of the supervisor, the employee may receive compensation in lieu of time off. The time should be reported accordingly on the bi-weekly time record in Self-Service Banner.",
+      "Note: University Police, who are on a twelve-hour schedule, should refer to their shift policy for information about compensation for holidays.",
+      "An employee on paid sick or annual leave during a holiday is granted holiday pay in lieu of sick or annual leave pay. If an employee is on an unpaid leave of absence or leave without pay, he/she is not paid for a holiday which occurs during his/her absence.",
+      "Employees who normally receive shift differential should receive the same for paid holidays.",
+      "Holidays of importance to an employee that are not observed by the University may be observed by the employee's use of annual leave, personal leave, or leave without pay. Such leave is subject to the approval of the employee's supervisor."
+     ],
+     "tables": [
+      {
+       "table_id": "staff_paid_holidays",
+       "title": "Paid holidays",
+       "header_rows": 0,
+       "cells": [
+        [
+         "Martin Luther King, Jr. Birthday:",
+         "8 hours"
+        ],
+        [
+         "Winter Break:",
+         "8 hours"
+        ],
+        [
+         "Spring Break:",
+         "40 hours"
+        ],
+        [
+         "Good Friday:",
+         "8 hours"
+        ],
+        [
+         "Memorial Day:",
+         "8 hours"
+        ],
+        [
+         "Juneteenth Holiday:",
+         "8 hours"
+        ],
+        [
+         "Independence Day:",
+         "8 hours"
+        ],
+        [
+         "Labor Day:",
+         "8 hours"
+        ],
+        [
+         "Fall Break:",
+         "8 hours"
+        ],
+        [
+         "Thanksgiving Holidays:",
+         "24 hours"
+        ],
+        [
+         "Christmas and New Year's Holidays:",
+         "80 hours"
+        ]
+       ],
+       "num_rows": 11,
+       "num_cols": 2
+      }
+     ],
+     "figures": 0,
+     "complete": true,
+     "notes": "Borderless table; '8 hours' repeats nine times, so a unique-cell-string metric would score a table missing most of them as complete."
+    }
+   ]
+  },
+  {
+   "filename": "una-faculty-handbook-2026-27-initial-version.8-1-26.pdf",
+   "total_pages": 108,
+   "annotations": [
+    {
+     "page_number": 29,
+     "layout": "serif prose continuing across pages, bold run-alone headings, numbered list",
+     "headings": [
+      {
+       "text": "Due Process Procedures",
+       "level": 4
+      },
+      {
+       "text": "Due Process Hearing Procedures",
+       "level": 4
+      }
+     ],
+     "paragraphs": [
+      "Affairs should have a conference with the faculty member. At the conclusion of the conference the Provost and Executive Vice President for Academic Affairs will make a written recommendation to the University President with a copy to the faculty member.",
+      "The Provost and Executive Vice President for Academic Affairs' recommendation to the faculty member of the action proposed shall be in writing by certified or registered mail or by such other appropriate means as may provide delivery and proof of receipt. The recommendation shall also contain a statement of the charges or conditions supporting the action proposed as well as notice of the faculty member's right to a full and fair hearing before a Due Process Committee according to the guidelines established in this policy.",
+      "A faculty member who receives notice of recommendation of disciplinary suspension or dismissal by the Provost and Executive Vice President for Academic Affairs may request, and shall be afforded, a hearing before a Due Process Committee. Failure to make a request in writing to the President within fourteen (14) days* after receipt of notification shall constitute a waiver by such faculty member of his/her right to a hearing before a Due Process Committee, and the President shall then make a final determination. On proper request for a hearing, as hereinafter provided, the President shall establish an ad hoc committee of five persons from the appropriate list of fifteen (15) nominees, from among tenured members of the University faculty, established for such purposes by the Faculty Senate at the beginning of each academic year. If the need arises during the summer terms, the President, in consultation with the Faculty Senate President, may make temporary appointments to fill vacancies on the committee.",
+      "Toward assuring a full and impartial hearing strictly on the merits of the case, due regard shall be given to the appointment to committees of persons with appropriate expertise and without bias or direct interest in the outcome, to provision for peer representation where relevant, and to adherence to hearing procedures. Persons appointed to a Due Process Committee who deem themselves disqualified by reasons of bias or interest may be excused. The faculty member shall have the right of challenge of Committee appointments for cause and, if in the judgment of the President a challenge is supported by adequate grounds, the member so challenged shall be excused. The President shall appoint replacements for members excused until a proper committee is established. The President shall designate one member of the Committee to act as chair or may appoint an additional ex officio nonvoting member to act as chair. The Committee may adopt supplemental rules and regulations for their governance and operation which are not in conflict with this resolution.",
+      "1. Once a timely request for a hearing has been received by the President and a Due Process Committee has been established, the Committee shall, with due diligence, considering the interests of both the University and the faculty member affected, hold a hearing and report its findings and recommendations to the President and to the involved faculty member."
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "First paragraph continues from the previous page. Footer 'Page 23' excluded. Heading level 4 is relative (these sit under a numbered 2.x section)."
+    },
+    {
+     "page_number": 33,
+     "layout": "serif prose with a centred numbered section heading; lower half blank",
+     "headings": [
+      {
+       "text": "2.11 APPLICATION OF HANDBOOK",
+       "level": 2
+      }
+     ],
+     "paragraphs": [
+      "Faculty members are expected to assist in keeping their records current by reporting changes affecting directory information, tax and benefit records, additional training and degrees, research, special honors and recognitions, offices and memberships, publications, and other pertinent information.",
+      "New appointees are contacted by the Office of Human Resources to complete all appropriate forms, including tax withholding forms, applications for insurance, retirement system membership, and other university benefits. This must be done at least two weeks prior to the end of the month in which first payment is to be made.",
+      "The provisions of this Handbook are general guidelines the University intends to apply in every applicable case. None of these provisions is intended, however, to induce continued employment or otherwise to be an offer of a contract of employment for a definite duration or to constitute an employment contract or to create a property interest under Alabama or Federal law. Initial employment offers, and notices of promotion and tenure, are in the form of separate documents as specified in Section 2.4.2 above and must be in writing and signed by the President of UNA. This section shall not be construed, however, to affect adversely the rights of tenured faculty members in any way."
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "Footer 'Page 27' excluded."
+    },
+    {
+     "page_number": 34,
+     "layout": "chapter title page with a three-level numbered contents list in bold capitals",
+     "headings": [
+      {
+       "text": "3. RIGHTS AND RESPONSIBILITIES",
+       "level": 1
+      }
+     ],
+     "paragraphs": [
+      "3.1 ACADEMIC FREEDOM AND RESPONSIBILITY",
+      "3.1.1 STATEMENT ON PROFESSIONAL ETHICS",
+      "3.2 WORKLOADS",
+      "3.2.1 ASSIGNMENTS",
+      "3.2.2 FACULTY WORKLOADS AND TEACHING LOADS",
+      "3.2.3 OFFICE HOURS",
+      "3.2.4 DEPARTMENT CHAIRPERSON—APPOINTMENT, WORKLOAD, AND SUPPLEMENT",
+      "3.2.5 OFF-CAMPUS INSTRUCTION",
+      "3.2.6 INTERIM PERIODS",
+      "3.2.7 OVERLOADS FOR DEPARTMENT CHAIRS",
+      "3.3 PARTICIPATION IN UNIVERSITY ACTIVITIES",
+      "3.3.1 ACADEMIC ADVISEMENT",
+      "3.3.2 COMMENCEMENT",
+      "3.3.3 CURRICULUM DEVELOPMENT AND ASSESSMENT",
+      "3.3.4 FACULTY MEETINGS",
+      "3.3.5 LEARNED SOCIETIES AND PROFESSIONAL ASSOCIATIONS",
+      "3.3.6 SPONSORSHIPS",
+      "3.4 UNIVERSITY AND COMMUNITY INVOLVEMENT",
+      "3.5 RESEARCH AND CONSULTING ACTIVITIES",
+      "3.6 PATENT POLICY",
+      "3.7 COPYRIGHT POLICY",
+      "3.8 STUDENT COPYRIGHT NOTICE",
+      "3.9 OUTSIDE EMPLOYMENT",
+      "3.10 ABSENCES",
+      "3.11 FACULTY RESEARCH/ DEVELOPMENT",
+      "3.12 LEAVE OF ABSENCE",
+      "3.13 BIRTH RECOVERY LEAVE, PARENTAL LEAVE, AND ASSOCIATED WORKLOAD ADJUSTMENTS",
+      "3.14 FACULTY DEVELOPMENT LEAVE",
+      "3.15 FACULTY ENGAGED IN INTERNATIONAL FELLOWSHIP OR EXCHANGE",
+      "3.15.1 FACULTY ON INTERNATIONAL FELLOWSHIP LEAVE",
+      "3.15.2 FACULTY IN THE UNA EXCHANGE PROGRAM",
+      "3.16 FACULTY EVALUATION",
+      "3.16.1 COMPONENTS OF THE PROGRAM",
+      "3.16.2 USE OF THE RESULTS OF THE PROGRAM"
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "Contents entries are bold capitals but are list items, not headings: a typography-only heading detector will over-fire here. '=====' rules and footer 'Page 28' excluded."
+    },
+    {
+     "page_number": 35,
+     "layout": "centred numbered section heading, numbered sub-heading, long serif prose",
+     "headings": [
+      {
+       "text": "3.1 ACADEMIC FREEDOM AND RESPONSIBILITY",
+       "level": 2
+      },
+      {
+       "text": "3.1.1 Statement on Professional Ethics",
+       "level": 3
+      }
+     ],
+     "paragraphs": [],
+     "tables": [],
+     "figures": 0,
+     "complete": false,
+     "notes": "Structure only; body text is covered by the OCR reference."
+    }
+   ]
+  },
+  {
+   "filename": "university_employee_policy_manual_and_handbook.pdf",
+   "total_pages": 89,
+   "annotations": [
+    {
+     "page_number": 51,
+     "layout": "policy text with nested bullet lists and short sub-headings",
+     "headings": [
+      {
+       "text": "PAID BIRTH RECOVERY LEAVE PROGRAM POLICY",
+       "level": 1
+      },
+      {
+       "text": "Paid Birth Recovery Leave",
+       "level": 2
+      },
+      {
+       "text": "Eligibility",
+       "level": 2
+      },
+      {
+       "text": "Leave Considerations",
+       "level": 2
+      },
+      {
+       "text": "Coordination with other Leave Types",
+       "level": 2
+      }
+     ],
+     "paragraphs": [
+      "Approved by the Board of Trustees, 03/05/1993",
+      "Revised, 01/20/1998",
+      "The University recognizes the importance of a period of paid leave for medical recovery from childbirth. This leave may be used in conjunction with other forms of paid and unpaid leave following the birth of a child.",
+      "Four weeks of paid Birth Recovery Leave per year will be provided to eligible employees who give birth and are eligible for Family and Medical Leave (FMLA). Birth recovery leave specifications are as follows:",
+      "Must be taken immediately following the birth;",
+      "Must be taken consecutively in one-week increments;",
+      "Limited to one paid birth recovery allotment per rolling calendar year; and",
+      "Paid at 100 percent of straight-time, regular, base pay or salary (excludes summer pay).",
+      "Eligible employees must meet the following requirements:",
+      "Must be a full-time, regular faculty or staff member;",
+      "Must have completed two full calendar years of employment in an active status (inclusive of nine- and ten-month appointments);",
+      "Must be a birth parent;",
+      "Must be eligible for Family and Medical Leave (FMLA) -",
+      "Requirement of 12 previous months of service, and",
+      "Service of at least 1,250 hours in the previous 12 months.",
+      "If the birth occurs outside of a regular appointment period, employee will only be eligible for the balance of the four-week recovery period that overlaps the next regular appointment period.",
+      "Eligible employees are limited to one birth recovery leave period per 12-month rolling year.",
+      "Paid birth recovery leave must be taken in concurrence with Family and Medical Leave (FMLA).",
+      "Eligible employees who qualify for paid birth recovery leave (if approved) must exhaust birth recovery leave prior to using paid parental leave.",
+      "Birth recovery leave may be used in conjunction with a variety of paid leave types such as sick leave, annual leave, and compensatory time not to exceed the 12-week Family and Medical Leave (FMLA) maximum.",
+      "If a paid university holiday occurs during a week of paid birth recovery leave, no additional pay or time off will be provided for the University holiday. For example, if a week of paid birth recovery leave occurs during the week of Memorial Day, the employee is not also entitled to holiday pay or a day off at another time. Paid birth recovery leave should not be used during whole holiday weeks such as Spring Break and the two-week Christmas holiday break. In the case of whole holiday weeks, the balance of the four-week entitlement will resume the week immediately following the holiday week(s)."
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "Printed page number 49 (footer) excluded."
+    },
+    {
+     "page_number": 67,
+     "layout": "section divider: contents list with a rotated title",
+     "headings": [
+      {
+       "text": "Procedures, Processes, and Programs",
+       "level": 1
+      }
+     ],
+     "paragraphs": [
+      "Administrative Leave",
+      "Emergency Procedures",
+      "The Isbell Scholar Program",
+      "Jury Duty",
+      "Ombudsman",
+      "Presentation of Diplomas at Commencement",
+      "Recruiting and Selection Procedures",
+      "Service Awards",
+      "Sick Leave",
+      "Tuition Remission (Remission of Tuition and Fees)",
+      "Verification of Employment",
+      "University Volunteer"
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "Rotated title on the right edge."
+    },
+    {
+     "page_number": 72,
+     "layout": "dense prose with run-in underlined category labels",
+     "headings": [
+      {
+       "text": "Usage of Sick Leave",
+       "level": 2
+      },
+      {
+       "text": "Categories of Sick Leave",
+       "level": 3
+      }
+     ],
+     "paragraphs": [
+      "There are various categories of sick leave, the usage of which are subtracted from the employee's sick leave balance.",
+      "Personal illness/accident leave and physician appointments: An employee may take sick leave if he/she is unable to work due to illness or injury or for health-related professional services which cannot be obtained outside regular work hours.",
+      "Maternity leave: Sick leave can be used for up to 6 weeks' postpartum. Should an employee desire to take the balance of her 12-week Family and Medical Leave Act (FMLA) allotment for extended maternity leave (beyond the postpartum period), she must use annual or unpaid leave to do so. Disabilities caused or contributed to by pregnancy, childbirth, or related medical conditions are treated the same as disabilities caused or contributed to by other medical conditions under the University's health or disability insurance and sick and annual leave plans.",
+      "Family illness/accident leave: Sick leave may be used for illness or injury of an immediate family member which requires the employee's presence. Immediate family is considered to be a spouse, child, stepchild, mother, father, brother, sister, mother-in-law, father-in-law, son-in-law, daughter-in-law, grandparent, or grandchild. Generally, the maximum amount that can be charged against sick leave for family illness/accident leave during a calendar year is 12 weeks for family members covered by the FMLA.",
+      "Bereavement leave (death of a family member): An employee may take time off due to a death in the immediate family and may charge the time off to sick leave. Immediate family is defined above. Proof of relationship to the family member may be required. Generally, the maximum amount that can be charged against sick leave for death of a family member is three days. Additional sick leave time may be granted under certain circumstances by the appropriate vice president.",
+      "Funeral leave: An employee may take sick leave to attend the funeral of family members (outside the immediate family) and friends. Time off normally is limited to one day or less for each occurrence.",
+      "Personal leave: An employee is allowed time away from work to take care of extraordinary legal or personal business matters. Personal leave should be approved in advance, and work requirements take priority over personal leave. Only two days per year of personal leave are authorized. (The year starts on January 1 and ends on December 31.) An additional three days of leave may be approved by the appropriate vice president when circumstances warrant such action. Personal leave is charged against the accrued sick leave balance and cannot be carried over from one year to the next.",
+      "On-the-job injury leave: An employee who is injured on the job may elect to charge the absence to his/her accrued sick leave in lieu of being paid under the University's Workers' Compensation Equivalent Program. After exhausting all sick leave, the employee may request that annual leave or compensatory time be used, but such requests must be made to the Office of Human Resources.",
+      "Miscellaneous uses: Sick leave may be taken to attend classes during the workday if approved by the supervisor or for absences resulting from inclement weather when the University is not closed may be charged against sick leave."
+     ],
+     "tables": [],
+     "figures": 0,
+     "complete": true,
+     "notes": "Printed page number 69 excluded. Heading levels are relative: this page continues the Sick Leave policy begun on the previous page."
+    }
+   ]
+  }
+ ]
 }
