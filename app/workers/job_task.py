@@ -26,6 +26,7 @@ their own loop, so a shared pool would hand connections across loops.
 from __future__ import annotations
 
 import asyncio
+import functools
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -41,6 +42,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.core.exceptions import ConflictException
+from app.core.locks import LockNotAcquired, distributed_lock
 from app.core.logging import get_logger
 from app.db.models.job import FailureKind, Job, JobStatus
 from app.jobs.service import (
@@ -106,6 +108,11 @@ class RetryLater(Exception):
         self.cause = cause
 
 
+# Held for the whole execution and renewed while the body runs; a worker that
+# dies frees it within this many seconds.
+JOB_LOCK_TTL = 60.0
+
+
 async def execute_job(
     body: JobBody,
     job_id: uuid.UUID,
@@ -119,7 +126,43 @@ async def execute_job(
     Raises RetryLater after a transient failure the policy still allows a
     retry for; the caller re-publishes. Any other failure fails the job - a
     dead letter - and propagates.
+
+    The delivery first takes the job's lock (Task 7.6). A second delivery of a
+    job that is running right now - a duplicate message - finds it held and
+    is re-sent for later instead of running the body twice. It is not dropped:
+    the holder may be a worker that just died, whose lock outlives it by up to
+    the TTL, and the later delivery is what finishes that job.
     """
+    try:
+        async with distributed_lock(f"job:{job_id}", ttl=JOB_LOCK_TTL):
+            return await _execute_claimed(body, job_id, worker, kwargs, then, policy)
+    except LockNotAcquired as exc:
+        logger.info("job is running elsewhere; deferring this delivery", job_id=str(job_id))
+        raise RetryLater(JOB_LOCK_TTL, exc) from exc
+    except (RetryLater, JobCancelled):
+        raise
+    except Exception as exc:
+        # Redis unreachable while taking the lock: nothing has run and the row
+        # is untouched, so this delivery is simply tried again later.
+        if _lock_unavailable(exc):
+            raise RetryLater(policy.delay_for(1), exc) from exc
+        raise
+
+
+def _lock_unavailable(exc: Exception) -> bool:
+    import redis.exceptions
+
+    return isinstance(exc, (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError))
+
+
+async def _execute_claimed(
+    body: JobBody,
+    job_id: uuid.UUID,
+    worker: str,
+    kwargs: dict[str, Any],
+    then: str | None,
+    policy: RetryPolicy,
+) -> str:
     engine = worker_engine_factory()
     try:
         sessions = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
@@ -343,3 +386,30 @@ async def replay(dead: Job, jobs: JobService | None = None) -> Job:
         replay_of_id=dead.id,
         **(dead.payload or {}),
     )
+
+
+def single_instance(name: str, ttl: float = 300.0) -> Callable[[JobBody], JobBody]:
+    """Let at most one copy of a maintenance job body run at a time (Task 7.6).
+
+    Scheduled maintenance (Task 7.8) can overlap itself - a slow sweep still
+    running when the next tick fires, or the same schedule on two hosts. The
+    copy that finds the lock taken succeeds as a no-op: the work it would have
+    done is being done.
+    """
+
+    def decorator(body: JobBody) -> JobBody:
+        @functools.wraps(body)
+        async def guarded(ctx: JobContext, **kwargs: Any) -> None:
+            acquired = False
+            try:
+                async with distributed_lock(f"maintenance:{name}", ttl=ttl):
+                    acquired = True
+                    await body(ctx, **kwargs)
+            except LockNotAcquired:
+                if acquired:
+                    raise  # from inside the body: not ours to swallow
+                await ctx.progress(1.0, f"skipped: {name} is already running elsewhere")
+
+        return guarded
+
+    return decorator

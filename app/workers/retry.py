@@ -28,6 +28,7 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.core.exceptions import ModelProviderException
+from app.core.locks import LockNotAcquired
 from app.retrieval.sparse_store import SparseModelNotReadyError
 
 _TRANSIENT_TYPES: tuple[type[BaseException], ...] = (
@@ -40,6 +41,7 @@ _TRANSIENT_TYPES: tuple[type[BaseException], ...] = (
     OperationalError,
     ModelProviderException,
     SparseModelNotReadyError,
+    LockNotAcquired,
 )
 _TRANSIENT_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 _TRANSIENT_S3_CODES = frozenset(

@@ -21,6 +21,7 @@ only at `publish_version`, after `validate_index` has reconciled its counts.
 
 from __future__ import annotations
 
+import functools
 import json
 import mimetypes
 import tempfile
@@ -36,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import AppSettings, get_settings
 from app.core.exceptions import NotFoundException
+from app.core.locks import distributed_lock
 from app.core.logging import get_logger
 from app.db.models.document import Document
 from app.db.models.version import DocumentVersion, VersionStatus
@@ -261,7 +263,41 @@ def _duplicate(document: Document, file_hash: str) -> AcceptedUpload:
 
 # ── Chain steps ──────────────────────────────────────────────────────────────
 
+# How long an activation waits for another to finish before failing (and
+# being retried by its job's policy).
+ACTIVATION_LOCK_WAIT = 30.0
 
+
+def activation_lock_name(document_id: uuid.UUID) -> str:
+    return f"version-activation:{document_id}"
+
+
+def version_state_lock_name(version_id: uuid.UUID) -> str:
+    return f"version-state:{version_id}"
+
+
+Step = Callable[..., Awaitable[StepOutcome]]
+
+
+def _serialised_on_version(step: Step) -> Step:
+    """Hold the version's state lock while a step rewrites the version row (Task 7.6).
+
+    parse_document and normalize_document both write fields of the version
+    itself; under the lock, a replay of one cannot interleave with the other
+    or with a second copy of itself.
+    """
+
+    @functools.wraps(step)
+    async def serialised(
+        services: PipelineServices, session: AsyncSession, version_id: uuid.UUID, **kwargs: Any
+    ) -> StepOutcome:
+        async with distributed_lock(version_state_lock_name(version_id), ttl=60.0, wait=60.0):
+            return await step(services, session, version_id, **kwargs)
+
+    return serialised
+
+
+@_serialised_on_version
 async def parse_document(
     services: PipelineServices,
     session: AsyncSession,
@@ -386,6 +422,7 @@ async def ocr_pages(
     return StepOutcome("every page yielded text; nothing to OCR")
 
 
+@_serialised_on_version
 async def normalize_document(
     services: PipelineServices,
     session: AsyncSession,
@@ -616,23 +653,32 @@ async def publish_version(
     version_id: uuid.UUID,
     progress: Progress = _no_progress,
 ) -> StepOutcome:
-    """Mark the draft version active.
+    """Mark the draft version active, holding the document's activation lock (Task 7.6).
 
-    A conditional update, so a replay finds nothing to flip. Superseding earlier
-    versions and lock-guarding activation are Task 7.9's.
+    Activation is per document: Task 7.9 makes it flip the document's earlier
+    versions in the same step, so two activations of one document - a replay
+    racing the chain, two versions finishing together - must not interleave.
+    The lock serialises them; inside it the update is still conditional, so
+    the second attempt finds nothing to flip and reports a no-op.
     """
-    result = await session.execute(
-        update(DocumentVersion)
-        .where(
-            DocumentVersion.id == version_id,
-            DocumentVersion.status == VersionStatus.DRAFT.value,
+    version = await _version(session, version_id)
+    async with distributed_lock(
+        activation_lock_name(version.document_id), ttl=30.0, wait=ACTIVATION_LOCK_WAIT
+    ) as lock:
+        result = await session.execute(
+            update(DocumentVersion)
+            .where(
+                DocumentVersion.id == version_id,
+                DocumentVersion.status == VersionStatus.DRAFT.value,
+            )
+            .values(status=VersionStatus.ACTIVE.value)
         )
-        .values(status=VersionStatus.ACTIVE.value)
-    )
-    await session.commit()
-    if result.rowcount == 0:  # type: ignore[attr-defined]
-        version = await _version(session, version_id)
-        return StepOutcome(f"version already {version.status}", noop=True)
+        if result.rowcount == 0:  # type: ignore[attr-defined]
+            await session.rollback()
+            current = await _version(session, version_id)
+            return StepOutcome(f"version already {current.status}", noop=True)
+        lock.ensure_held()
+        await session.commit()
     return StepOutcome("version published")
 
 
