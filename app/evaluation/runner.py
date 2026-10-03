@@ -396,8 +396,24 @@ class ExperimentRunner:
             run.generator_provider = answer.provider
             run.generator_model = answer.model_name
             run.generator_model_version = answer.model_version
-            run.prompt_versions.update(answer.prompt_versions)
-            run.prompt_hashes.update(answer.prompt_hashes)
+
+        # Every answer's prompts, not only the first's: an answer uses either the
+        # answer or the abstention prompt, so recording the first answer alone
+        # left experiment-004 with no `answer` hash because it opened on an
+        # abstention. A hash that changes mid-run is warned about and the first
+        # one kept, so the record still names what most of the run used.
+        for key, version in answer.prompt_versions.items():
+            run.prompt_versions.setdefault(key, version)
+        for key, digest in answer.prompt_hashes.items():
+            recorded = run.prompt_hashes.setdefault(key, digest)
+            if recorded != digest:
+                logger.warning(
+                    "prompt_changed_mid_run",
+                    prompt=key,
+                    recorded=recorded,
+                    seen=digest,
+                    question_id=question.question_id,
+                )
 
         return result
 

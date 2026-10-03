@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -182,6 +183,34 @@ class TestRun:
         assert run.system_metrics["failure_rate"] == 0.0
         assert run.system_metrics["avg_total_tokens"] == pytest.approx(960.0)
         assert run.completed_at is not None
+
+    async def test_records_the_prompts_of_every_answer_not_only_the_first(self) -> None:
+        abstention = dataclasses.replace(
+            good_answer(),
+            prompt_versions={"abstention": "abstention_v1"},
+            prompt_hashes={"abstention": "def456"},
+        )
+
+        class Scripted(FakeGeneration):
+            async def answer(self, query: str, session: Any, **kwargs: Any) -> AnswerResult:
+                self.queries.append(query)
+                return abstention if len(self.queries) == 1 else good_answer()
+
+        runner = ExperimentRunner(
+            generation_service=Scripted(),  # type: ignore[arg-type]
+            judge=FakeJudge(),  # type: ignore[arg-type]
+            settings=settings(EVAL_CONCURRENCY=1),
+        )
+        run = await runner.run(
+            name="e",
+            questions=[golden(), golden(question_id="dev-factual-0002")],
+            session_factory=session_factory,
+            split=DatasetSplit.DEV,
+            dataset_version="v1",
+        )
+
+        assert run.prompt_versions == {"abstention": "abstention_v1", "answer": "answer_v1"}
+        assert run.prompt_hashes == {"abstention": "def456", "answer": "abc123"}
 
     async def test_context_recall_reflects_what_survived_assembly(self) -> None:
         runner = ExperimentRunner(
