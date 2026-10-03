@@ -1,7 +1,9 @@
 """Format Router for document intelligence parsing (Task 1.5, ADR-004).
 
 Routes files by format to the optimal primary parser and manages automatic fallback chains:
-  - PDF: DoclingParser (Primary) -> OpenDataLoaderParser (Fallback) -> PyMuPDFParser (Fast Baseline)
+  - PDF: LayoutHeuristicParser (Primary) -> ColumnHeuristicParser (Fallback) -> PyMuPDFParser
+    (Fast Baseline). DoclingParser and OpenDataLoaderParser are available as
+    benchmark candidates and can be passed in as ``pdf_primary`` / ``pdf_fallbacks``.
   - DOCX, XLSX, PPTX, TXT, MD: OfficeParser
 """
 
@@ -10,9 +12,9 @@ from pathlib import Path
 import structlog
 
 from app.ingestion.parsers.base import DocumentParser, ParsedDocument
-from app.ingestion.parsers.docling_parser import DoclingParser
+from app.ingestion.parsers.column_heuristic_parser import ColumnHeuristicParser
+from app.ingestion.parsers.layout_heuristic_parser import LayoutHeuristicParser
 from app.ingestion.parsers.office_parser import OfficeParser
-from app.ingestion.parsers.opendataloader_parser import OpenDataLoaderParser
 from app.ingestion.parsers.pymupdf_parser import PyMuPDFParser
 
 logger = structlog.get_logger(__name__)
@@ -27,8 +29,8 @@ class FormatRouter:
         pdf_fallbacks: list[DocumentParser] | None = None,
         office_parser: DocumentParser | None = None,
     ) -> None:
-        self.pdf_primary = pdf_primary or DoclingParser()
-        self.pdf_fallbacks = pdf_fallbacks or [OpenDataLoaderParser(), PyMuPDFParser()]
+        self.pdf_primary = pdf_primary or LayoutHeuristicParser()
+        self.pdf_fallbacks = pdf_fallbacks or [ColumnHeuristicParser(), PyMuPDFParser()]
         self.office_parser = office_parser or OfficeParser()
 
     def route_and_parse(

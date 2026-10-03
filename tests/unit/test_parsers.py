@@ -1,5 +1,6 @@
 """Unit tests for document parsers (Task 1.3, Task 1.4)."""
 
+import shutil
 from pathlib import Path
 
 import docx
@@ -7,8 +8,10 @@ import openpyxl
 import pptx
 import pytest
 
-from app.ingestion.parsers.base import ParsedDocument
+from app.ingestion.parsers.base import ElementType, ParsedDocument
+from app.ingestion.parsers.column_heuristic_parser import ColumnHeuristicParser
 from app.ingestion.parsers.docling_parser import DoclingParser
+from app.ingestion.parsers.layout_heuristic_parser import LayoutHeuristicParser
 from app.ingestion.parsers.office_parser import OfficeParser
 from app.ingestion.parsers.opendataloader_parser import OpenDataLoaderParser
 from app.ingestion.parsers.pymupdf_parser import PyMuPDFParser
@@ -65,15 +68,15 @@ def temp_pptx(tmp_path: Path) -> Path:
     return p
 
 
-def test_docling_parser_pdf(health_plan_pdf: Path) -> None:
+def test_layout_heuristic_parser_pdf(health_plan_pdf: Path) -> None:
     if not health_plan_pdf.exists():
         pytest.skip("Corpus file not found.")
 
-    parser = DoclingParser()
+    parser = LayoutHeuristicParser()
     doc = parser.parse(health_plan_pdf)
 
     assert isinstance(doc, ParsedDocument)
-    assert doc.parser_name == "docling"
+    assert doc.parser_name == "pymupdf-layout"
     assert doc.total_pages == 11
     assert len(doc.pages) == 11
     assert len(doc.all_elements) > 0
@@ -84,17 +87,53 @@ def test_docling_parser_pdf(health_plan_pdf: Path) -> None:
         assert el.bounding_box.page_number >= 1
 
 
-def test_opendataloader_parser_pdf(staff_handbook_pdf: Path) -> None:
+def test_column_heuristic_parser_pdf(staff_handbook_pdf: Path) -> None:
     if not staff_handbook_pdf.exists():
         pytest.skip("Corpus file not found.")
 
-    parser = OpenDataLoaderParser()
+    parser = ColumnHeuristicParser()
     doc = parser.parse(staff_handbook_pdf)
 
     assert isinstance(doc, ParsedDocument)
-    assert doc.parser_name == "opendataloader"
+    assert doc.parser_name == "pymupdf-columns"
     assert doc.total_pages == 56
     assert len(doc.all_elements) > 0
+
+
+def test_opendataloader_parser_pdf() -> None:
+    pytest.importorskip("opendataloader_pdf")
+    if shutil.which("java") is None:
+        pytest.skip("OpenDataLoader needs a Java runtime.")
+    pdf = CORPUS_DIR / "dental_plan_at_a_glance_2026.pdf"
+
+    doc = OpenDataLoaderParser().parse(pdf)
+
+    assert doc.parser_name == "opendataloader"
+    assert doc.total_pages == 4
+    headings = [e for e in doc.all_elements if e.element_type == ElementType.HEADING]
+    assert headings and all(h.level for h in headings)
+    # Page 3's benefit grid comes back as a real two-column table.
+    table = doc.pages[2].tables[0]
+    assert table.num_cols == 2 and table.cells[0][0] == "Deductible"
+    # Boxes are flipped to the canonical top-left origin.
+    box = headings[0].bounding_box
+    assert box is not None and 0 <= box.y0 < box.y1 <= doc.pages[0].height
+
+
+@pytest.mark.heavy
+def test_docling_parser_pdf() -> None:
+    pytest.importorskip("docling")
+    pdf = CORPUS_DIR / "dental_plan_at_a_glance_2026.pdf"
+
+    doc = DoclingParser().parse(pdf)
+
+    assert doc.parser_name == "docling"
+    assert doc.total_pages == 4
+    assert any(e.element_type == ElementType.HEADING for e in doc.all_elements)
+    table = doc.pages[2].tables[0]
+    assert table.num_cols == 2
+    box = doc.all_elements[0].bounding_box
+    assert box is not None and 0 <= box.y0 < box.y1 <= doc.pages[0].height
 
 
 def test_pymupdf_parser_pdf(staff_handbook_pdf: Path) -> None:

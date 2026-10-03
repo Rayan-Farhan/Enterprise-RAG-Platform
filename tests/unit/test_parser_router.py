@@ -39,7 +39,7 @@ def test_format_router_routes_pdf(sample_pdf: Path) -> None:
 
     router = FormatRouter()
     doc = router.route_and_parse(sample_pdf)
-    assert doc.parser_name == "docling"
+    assert doc.parser_name == "pymupdf-layout"
     assert doc.total_pages == 1
 
 

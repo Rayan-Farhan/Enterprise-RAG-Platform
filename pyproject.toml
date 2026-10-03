@@ -45,6 +45,12 @@ dev = [
     # stale enough to shadow it and report false errors (e.g. missing `aclose`).
     "aiosqlite>=0.20.0",
 ]
+# Parser benchmark candidates (ADR-004). Heavy: Docling pulls PyTorch and its
+# layout/table models; OpenDataLoader also needs a Java 11+ runtime on PATH.
+parsers = [
+    "docling>=2.133.0",
+    "opendataloader-pdf>=2.5.12",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -113,6 +119,10 @@ module = [
     "docx.*",
     "openpyxl.*",
     "pptx.*",
+    # Optional parser candidates (the `parsers` extra); absent in CI.
+    "docling.*",
+    "docling_core.*",
+    "opendataloader_pdf.*",
 ]
 ignore_missing_imports = true
 
@@ -124,8 +134,11 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 # `live` tests hit real provider APIs and are excluded by default; run them with
 # `pytest -m live` (or `make smoke`) when provider keys are configured.
-addopts = "-v --tb=short -m 'not live'"
+# `heavy` tests load the optional Docling models (minutes on CPU); run them with
+# `pytest -m heavy` after `pip install -e ".[parsers]"`.
+addopts = "-v --tb=short -m 'not live and not heavy'"
 markers = [
     "live: requires a real provider API key and makes a network call",
+    "heavy: loads optional ML parser models (Docling); slow on CPU",
 ]
 
