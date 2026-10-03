@@ -81,3 +81,6 @@ scratch/
 /docs
 # Partial evaluation runs; the finished record beside them is what gets committed.
 evaluation/results/.checkpoints/
+
+# Parser benchmark parse cache (re-created by benchmarks.parser_benchmark)
+benchmarks/.cache/
