@@ -18,6 +18,7 @@ from typing import Any, BinaryIO
 import pytest
 from celery import Task
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -33,6 +34,7 @@ from app.db.models.job import Job, JobStatus, JobType
 from app.db.models.page import Page
 from app.db.models.version import DocumentVersion, VersionStatus
 from app.ingestion import pipeline
+from app.ingestion.adapters.canonical_adapter import CanonicalAdapter
 from app.ingestion.chunking.service import ChunkingService
 from app.ingestion.dedup import BoilerplateDetector
 from app.ingestion.parsers.base import (
@@ -43,7 +45,7 @@ from app.ingestion.parsers.base import (
     ParsedPage,
 )
 from app.ingestion.parsers.router import FormatRouter
-from app.jobs.service import JobService
+from app.jobs.service import JobAlreadyActive, JobService
 from app.models.schemas import EmbeddingResult, EmbeddingsResponse, ModelMetadata, TokenCounts
 from app.retrieval.embedding import EmbeddingService
 from app.retrieval.indexer import ChunkIndexer, LexicalIndexer, MissingVectorsError, SparseIndexer
@@ -639,3 +641,147 @@ class TestFailure:
             (JobType.PARSE_DOCUMENT, JobStatus.FAILED)
         ]
         assert "corrupt PDF" in (jobs[0].error or "")
+
+
+class TestIdempotency:
+    """Task 7.4: deliberately re-running every task duplicates nothing."""
+
+    async def test_rerunning_every_task_as_a_new_job_duplicates_nothing(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        accepted = await ingest(sessions, doubles, broker)
+        vid = accepted.version_id
+
+        async def snapshot() -> tuple[int, ...]:
+            return (
+                await count(sessions, Page, vid),
+                await count(sessions, Element, vid),
+                await count(sessions, Chunk, vid),
+                len(doubles.vectors.points),
+                len(doubles.lexical.docs),
+                doubles.gateway.embedded_texts,
+                doubles.parser.calls,
+            )
+
+        before = await snapshot()
+        # Every step enqueued afresh; each one also re-runs the rest of the
+        # chain behind it, so later steps are replayed many times over.
+        for task in ingestion_tasks.CHAIN:
+            await job_task_module.enqueue(
+                task,
+                document_id=accepted.document_id,
+                version_id=vid,
+                jobs=JobService(sessions),
+                metadata={"department": "HR", "policy_type": "Leave"},
+            )
+            await drain(broker)
+
+        jobs = await jobs_of(sessions, vid)
+        assert len(jobs) == len(CHAIN_ORDER) + sum(range(1, len(CHAIN_ORDER) + 1))
+        assert all(j.status == JobStatus.SUCCEEDED for j in jobs), [
+            (j.task_type, j.error) for j in jobs if j.status != JobStatus.SUCCEEDED
+        ]
+        assert await snapshot() == before
+
+    async def test_a_step_already_queued_is_not_queued_twice(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        accepted = await accept(sessions, doubles)
+        jobs = JobService(sessions)
+        first = await ingestion_tasks.start_ingestion(
+            accepted.document_id, accepted.version_id, {}, jobs=jobs
+        )
+
+        with pytest.raises(JobAlreadyActive) as raised:
+            await ingestion_tasks.start_ingestion(
+                accepted.document_id, accepted.version_id, {}, jobs=jobs
+            )
+
+        assert raised.value.job.id == first.id
+        assert len(broker) == 1
+
+    async def test_a_finished_step_can_be_run_again(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        accepted = await ingest(sessions, doubles, broker)
+
+        again = await ingestion_tasks.start_ingestion(
+            accepted.document_id, accepted.version_id, {}, jobs=JobService(sessions)
+        )
+
+        assert again.status == JobStatus.QUEUED
+
+    def test_adapting_the_same_output_twice_yields_the_same_identities(self) -> None:
+        parsed = ChainParser().parse("ignored.pdf")
+        version_id, document_id = uuid.uuid4(), uuid.uuid4()
+
+        def adapt() -> tuple[list[uuid.UUID], list[uuid.UUID], uuid.UUID | None]:
+            _, _, pages, elements, meta = CanonicalAdapter.to_canonical_models(
+                parsed_doc=parsed,
+                file_hash="h",
+                storage_key="k",
+                metadata_dict={"department": "HR"},
+                document_id=document_id,
+                version_id=version_id,
+            )
+            return [p.id for p in pages], [e.id for e in elements], meta.id if meta else None
+
+        first, second = adapt(), adapt()
+
+        assert first == second
+        assert len(set(first[1])) == len(first[1])
+
+    async def test_the_database_refuses_a_second_copy_of_a_page_or_element(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        doubles: Doubles,
+        broker: list[tuple[Task, dict[str, Any]]],
+    ) -> None:
+        accepted = await ingest(sessions, doubles, broker)
+        async with sessions() as session:
+            page = (
+                (await session.execute(select(Page).where(Page.version_id == accepted.version_id)))
+                .scalars()
+                .first()
+            )
+            element = (
+                (
+                    await session.execute(
+                        select(Element).where(Element.version_id == accepted.version_id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+        assert page is not None and element is not None
+
+        for clone in (
+            Page(
+                version_id=page.version_id,
+                page_number=page.page_number,
+                content_hash="x",
+            ),
+            Element(
+                version_id=element.version_id,
+                page_id=element.page_id,
+                page_number=element.page_number,
+                element_id=element.element_id,
+                element_type=element.element_type,
+                sequence_index=999,
+                text_content="copy",
+                content_hash="x",
+            ),
+        ):
+            async with sessions() as session:
+                session.add(clone)
+                with pytest.raises(IntegrityError):
+                    await session.commit()

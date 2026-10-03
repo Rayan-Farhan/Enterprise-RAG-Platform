@@ -11,7 +11,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 
+from app.api.idempotency import IdempotencyService, get_idempotency_service
 from app.core.config import AppSettings
+from app.core.exceptions import ConflictException
 from app.db.models import Base
 from app.db.session import get_db_session
 from app.ingestion import pipeline
@@ -120,6 +122,9 @@ def override_api_dependencies(
     app.dependency_overrides[get_db_session] = _get_test_session
     app.dependency_overrides[get_storage_service] = lambda: storage
     app.dependency_overrides[get_job_service] = lambda: JobService(test_db_session_factory)
+    app.dependency_overrides[get_idempotency_service] = lambda: IdempotencyService(
+        test_db_session_factory
+    )
 
     yield
 
@@ -258,3 +263,141 @@ def test_document_not_found(client: TestClient, override_api_dependencies: None)
     assert response.status_code == 404
     data = response.json()
     assert data["code"] == "NOT_FOUND"
+
+
+def _upload(
+    client: TestClient, content: bytes, key: str | None = None, name: str = "policy.pdf"
+) -> Any:
+    headers = {"Idempotency-Key": key} if key else {}
+    return client.post(
+        "/api/v1/documents",
+        files={"file": (name, content, "application/pdf")},
+        data={"metadata": METADATA_JSON},
+        headers=headers,
+    )
+
+
+class TestIdempotentUpload:
+    """Retrying an upload never starts a second ingestion (Task 7.4)."""
+
+    def test_a_retry_with_the_same_key_replays_the_first_response(
+        self, client: TestClient, override_api_dependencies: None, published: list[dict[str, Any]]
+    ) -> None:
+        first = _upload(client, b"%PDF-1.4 keyed", key="upload-1")
+        retry = _upload(client, b"%PDF-1.4 keyed", key="upload-1")
+
+        assert (first.status_code, retry.status_code) == (202, 202)
+        assert retry.json() == first.json()
+        assert retry.headers["Idempotent-Replayed"] == "true"
+        assert "Idempotent-Replayed" not in first.headers
+        assert len(published) == 1
+
+    def test_without_a_key_a_retry_is_a_duplicate_with_no_new_job(
+        self, client: TestClient, override_api_dependencies: None, published: list[dict[str, Any]]
+    ) -> None:
+        first = _upload(client, b"%PDF-1.4 unkeyed")
+        retry = _upload(client, b"%PDF-1.4 unkeyed")
+
+        assert (first.status_code, retry.status_code) == (202, 200)
+        assert retry.json()["document_id"] == first.json()["document_id"]
+        assert retry.json()["job_id"] is None
+        assert len(published) == 1
+
+    def test_the_same_key_on_a_different_file_is_refused(
+        self, client: TestClient, override_api_dependencies: None, published: list[dict[str, Any]]
+    ) -> None:
+        _upload(client, b"%PDF-1.4 one", key="shared-key")
+        other = _upload(client, b"%PDF-1.4 two", key="shared-key")
+
+        assert other.status_code == 422
+        assert "different request" in other.json()["detail"]
+        assert len(published) == 1
+
+    def test_an_overlong_key_is_refused(
+        self, client: TestClient, override_api_dependencies: None
+    ) -> None:
+        assert _upload(client, b"%PDF-1.4 long", key="k" * 256).status_code == 422
+
+    def test_a_failed_attempt_releases_its_key_and_the_retry_starts_the_chain(
+        self,
+        client: TestClient,
+        override_api_dependencies: None,
+        published: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def broker_down(**_: Any) -> None:
+            raise ConnectionError("broker unreachable")
+
+        monkeypatch.setattr(ingestion_tasks.parse_document, "apply_async", broker_down)
+        with pytest.raises(ConnectionError):
+            _upload(client, b"%PDF-1.4 outage", key="outage-1")
+
+        monkeypatch.setattr(
+            ingestion_tasks.parse_document,
+            "apply_async",
+            lambda *, kwargs, task_id: published.append(kwargs),
+        )
+        retry = _upload(client, b"%PDF-1.4 outage", key="outage-1")
+
+        assert retry.status_code == 202, retry.text
+        assert retry.json()["job_id"] == published[0]["job_id"]
+
+    def test_a_stored_document_that_never_started_is_started_by_a_reupload(
+        self,
+        client: TestClient,
+        override_api_dependencies: None,
+        published: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The first request stored the document, then died before enqueueing.
+        async def crash(*_: Any, **__: Any) -> None:
+            raise RuntimeError("process killed")
+
+        monkeypatch.setattr("app.api.v1.documents.start_ingestion", crash)
+        with pytest.raises(RuntimeError):
+            _upload(client, b"%PDF-1.4 orphan")
+        monkeypatch.undo()
+        monkeypatch.setattr(
+            ingestion_tasks.parse_document,
+            "apply_async",
+            lambda *, kwargs, task_id: published.append(kwargs),
+        )
+
+        retry = _upload(client, b"%PDF-1.4 orphan")
+
+        assert retry.status_code == 202, retry.text
+        assert retry.json()["is_duplicate"] is True
+        assert retry.json()["job_id"] == published[0]["job_id"]
+
+
+class TestIdempotencyService:
+    async def test_a_key_still_in_progress_is_a_conflict_until_completed(
+        self, test_db_session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        service = IdempotencyService(test_db_session_factory)
+        assert await service.claim("op", "k1", "fp") is None
+
+        with pytest.raises(ConflictException):
+            await service.claim("op", "k1", "fp")
+
+        await service.complete("op", "k1", 202, {"job_id": "j"})
+        stored = await service.claim("op", "k1", "fp")
+        assert stored is not None
+        assert (stored.status_code, stored.body) == (202, {"job_id": "j"})
+
+    async def test_a_released_key_can_be_claimed_again(
+        self, test_db_session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        service = IdempotencyService(test_db_session_factory)
+        await service.claim("op", "k2", "fp")
+        await service.release("op", "k2")
+
+        assert await service.claim("op", "k2", "fp") is None
+
+    async def test_keys_are_scoped_to_their_operation(
+        self, test_db_session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        service = IdempotencyService(test_db_session_factory)
+        await service.claim("documents.ingest", "same", "fp-a")
+
+        assert await service.claim("documents.index_version", "same", "fp-b") is None

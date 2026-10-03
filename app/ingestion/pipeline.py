@@ -102,6 +102,7 @@ class AcceptedUpload:
     file_hash: str
     storage_key: str
     is_duplicate: bool
+    version_status: str = VersionStatus.DRAFT.value
 
 
 @dataclass
@@ -254,6 +255,7 @@ def _duplicate(document: Document, file_hash: str) -> AcceptedUpload:
         file_hash=file_hash,
         storage_key=document.storage_key,
         is_duplicate=True,
+        version_status=versions[-1].status,
     )
 
 
@@ -420,10 +422,16 @@ async def normalize_document(
     version.effective_until = adapted.effective_until
     version.authority = adapted.authority
 
-    await DocumentRepository(session).save_version_content(
-        version, pages, elements, metadata_record
-    )
-    await session.commit()
+    try:
+        await DocumentRepository(session).save_version_content(
+            version, pages, elements, metadata_record
+        )
+        await session.commit()
+    except IntegrityError:
+        # Another delivery persisted the same rows first; the ids are
+        # deterministic (ADR-036), so theirs are exactly what this would write.
+        await session.rollback()
+        return StepOutcome("canonical pages persisted concurrently", noop=True)
     boilerplate = sum(1 for e in elements if e.is_boilerplate)
     return StepOutcome(
         f"{len(pages)} pages, {len(elements)} elements ({boilerplate} boilerplate)",

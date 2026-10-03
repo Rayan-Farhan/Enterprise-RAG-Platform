@@ -42,7 +42,13 @@ from sqlalchemy.pool import NullPool
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.models.job import Job, JobStatus
-from app.jobs.service import JobAlreadyExists, JobAlreadyFinished, JobCancelled, JobService
+from app.jobs.service import (
+    JobAlreadyActive,
+    JobAlreadyExists,
+    JobAlreadyFinished,
+    JobCancelled,
+    JobService,
+)
 from app.workers.celery_app import celery_app
 from app.workers.queues import QueueDomain
 
@@ -161,6 +167,11 @@ async def enqueue_follow_up(
         )
     except JobAlreadyExists:
         logger.info("follow-up already enqueued", job_id=str(job.id), next_task=next_task)
+        return None
+    except JobAlreadyActive as exc:
+        # Another run of this chain - a replay, or a retried request - already
+        # has the step in hand; a second copy would only race it.
+        logger.info("follow-up already active", job_id=str(job.id), active_job_id=str(exc.job.id))
         return None
 
 

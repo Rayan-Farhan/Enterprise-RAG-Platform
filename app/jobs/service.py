@@ -49,6 +49,14 @@ class JobAlreadyExists(Exception):
     """A job with the requested id was already recorded."""
 
 
+class JobAlreadyActive(Exception):
+    """The same step of the same version is already queued or running."""
+
+    def __init__(self, job: Job) -> None:
+        super().__init__(f"{job.task_type} for version {job.version_id} is already {job.status}")
+        self.job = job
+
+
 class JobAlreadyFinished(Exception):
     """The job reached a terminal state before this delivery of it started."""
 
@@ -70,8 +78,12 @@ class JobService:
         version_id: uuid.UUID | None = None,
         job_id: uuid.UUID | None = None,
     ) -> Job:
-        """Record a queued job. A caller-chosen ``job_id`` that already exists raises
-        JobAlreadyExists, which is how a chain step is enqueued at most once."""
+        """Record a queued job.
+
+        Raises JobAlreadyExists when a caller-chosen ``job_id`` is taken - how a
+        chain step is enqueued at most once - and JobAlreadyActive when the same
+        step of the same version is already queued or running.
+        """
         job = Job(
             id=job_id or uuid.uuid4(),
             document_id=document_id,
@@ -88,10 +100,28 @@ class JobService:
                 await session.commit()
             except IntegrityError:
                 await session.rollback()
-                if job_id is None or await session.get(Job, job_id) is None:
+                if job_id is not None and await session.get(Job, job_id) is not None:
+                    raise JobAlreadyExists(str(job_id)) from None
+                active = await self._active_step(session, version_id, task_type)
+                if active is None:
                     raise
-                raise JobAlreadyExists(str(job_id)) from None
+                raise JobAlreadyActive(active) from None
         return job
+
+    @staticmethod
+    async def _active_step(
+        session: AsyncSession, version_id: uuid.UUID | None, task_type: str
+    ) -> Job | None:
+        if version_id is None:
+            return None
+        result = await session.execute(
+            select(Job).where(
+                Job.version_id == version_id,
+                Job.task_type == task_type,
+                Job.status.in_([JobStatus.QUEUED.value, JobStatus.RUNNING.value]),
+            )
+        )
+        return result.scalars().first()
 
     async def get(self, job_id: uuid.UUID) -> Job:
         async with self._sessions() as session:
@@ -104,6 +134,13 @@ class JobService:
         async with self._sessions() as session:
             result = await session.execute(
                 select(Job).where(Job.document_id == document_id).order_by(Job.created_at, Job.id)
+            )
+            return result.scalars().all()
+
+    async def list_for_version(self, version_id: uuid.UUID) -> Sequence[Job]:
+        async with self._sessions() as session:
+            result = await session.execute(
+                select(Job).where(Job.version_id == version_id).order_by(Job.created_at, Job.id)
             )
             return result.scalars().all()
 

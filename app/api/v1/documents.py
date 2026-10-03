@@ -2,7 +2,6 @@
 
 import json
 import uuid
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import (
@@ -10,6 +9,7 @@ from fastapi import (
     Depends,
     File,
     Form,
+    Header,
     Query,
     Response,
     UploadFile,
@@ -17,6 +17,13 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.idempotency import (
+    IDEMPOTENCY_HEADER,
+    IdempotencyService,
+    fingerprint,
+    get_idempotency_service,
+    run_idempotently,
+)
 from app.api.v1.schemas.documents import (
     DocumentDetailResponse,
     DocumentIngestAccepted,
@@ -30,11 +37,14 @@ from app.api.v1.schemas.documents import (
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundException, ValidationException
 from app.core.logging import get_logger
+from app.db.models.job import JobStatus
+from app.db.models.version import VersionStatus
 from app.db.repositories.document_repo import DocumentRepository
 from app.db.session import get_db_session
 from app.ingestion.chunking.service import ChunkingService, get_chunking_service
-from app.ingestion.pipeline import accept_upload
-from app.jobs.service import JobService, get_job_service
+from app.ingestion.dedup import compute_file_sha256
+from app.ingestion.pipeline import AcceptedUpload, accept_upload
+from app.jobs.service import JobAlreadyActive, JobService, get_job_service
 from app.retrieval.indexer import (
     ChunkIndexer,
     LexicalIndexer,
@@ -67,6 +77,12 @@ async def ingest_document(
     session: AsyncSession = Depends(get_db_session),
     storage: ObjectStorageProtocol = Depends(get_storage_service),
     jobs: JobService = Depends(get_job_service),
+    idempotency: IdempotencyService = Depends(get_idempotency_service),
+    idempotency_key: str | None = Header(
+        default=None,
+        alias=IDEMPOTENCY_HEADER,
+        description="Retry-safe key: a repeat with the same key returns the first response",
+    ),
 ) -> DocumentIngestAccepted:
     """Store the upload and enqueue its ingestion (Task 7.3).
 
@@ -74,7 +90,8 @@ async def ingest_document(
     with a draft version, and returns the first job's id. Follow the chain at
     `GET /documents/{id}/jobs`; the version becomes active once every step has
     run. An identical file already in the repository returns 200 with that
-    document and no new job.
+    document and no new job. With an `Idempotency-Key`, a retry returns the
+    first attempt's response, job id included (Task 7.4).
     """
     settings = get_settings()
 
@@ -99,29 +116,83 @@ async def ingest_document(
         except json.JSONDecodeError as exc:
             raise ValidationException(f"Invalid JSON metadata payload: {exc}") from exc
 
-    accepted = await accept_upload(
-        session,
-        storage,
-        file_content=content,
-        filename=file.filename,
-        content_type=file.content_type,
-    )
-    if accepted.is_duplicate:
-        response.status_code = status.HTTP_200_OK
-        return DocumentIngestAccepted(
-            **asdict(accepted),
-            job_id=None,
-            message="Identical file already ingested; returned existing document reference.",
+    async def accept() -> DocumentIngestAccepted:
+        accepted = await accept_upload(
+            session,
+            storage,
+            file_content=content,
+            filename=file.filename or "",
+            content_type=file.content_type,
+        )
+        # The job row references the document, so the document must be
+        # committed before a worker - in another process - can look either up.
+        await session.commit()
+        if accepted.is_duplicate:
+            return await _answer_duplicate(accepted, metadata_dict, response, jobs)
+        job = await start_ingestion(accepted.document_id, accepted.version_id, metadata_dict, jobs)
+        return _accepted_response(
+            accepted, job.id, "Accepted; ingestion is running. Follow it at /documents/{id}/jobs."
         )
 
-    # The job row references the document, so the document must be committed
-    # before a worker - in another process - can look either up.
-    await session.commit()
-    job = await start_ingestion(accepted.document_id, accepted.version_id, metadata_dict, jobs)
+    return await run_idempotently(
+        idempotency,
+        operation="documents.ingest",
+        key=idempotency_key,
+        request_fingerprint=fingerprint(compute_file_sha256(content), file.filename, metadata_dict),
+        response=response,
+        default_status=status.HTTP_202_ACCEPTED,
+        model=DocumentIngestAccepted,
+        run=accept,
+    )
+
+
+def _accepted_response(
+    accepted: AcceptedUpload, job_id: uuid.UUID | None, message: str
+) -> DocumentIngestAccepted:
     return DocumentIngestAccepted(
-        **asdict(accepted),
-        job_id=job.id,
-        message="Accepted; ingestion is running. Follow it at /documents/{id}/jobs.",
+        document_id=accepted.document_id,
+        version_id=accepted.version_id,
+        job_id=job_id,
+        filename=accepted.filename,
+        file_hash=accepted.file_hash,
+        storage_key=accepted.storage_key,
+        is_duplicate=accepted.is_duplicate,
+        message=message,
+    )
+
+
+async def _answer_duplicate(
+    accepted: AcceptedUpload,
+    metadata: dict[str, Any],
+    response: Response,
+    jobs: JobService,
+) -> DocumentIngestAccepted:
+    """An identical file is already stored: point at it, starting its chain if it never ran.
+
+    A draft version none of whose jobs ever ran is an upload whose request
+    failed between storing the document and handing the first step to a
+    worker (a broker outage, a timeout, a killed process). Uploading the file
+    again is the natural retry, so it starts the chain rather than returning a
+    document that will never be processed.
+    """
+    jobs_so_far = await jobs.list_for_version(accepted.version_id)
+    if (
+        accepted.version_status == VersionStatus.DRAFT
+        and all(j.attempt == 0 for j in jobs_so_far)
+        and not any(j.status in (JobStatus.QUEUED, JobStatus.RUNNING) for j in jobs_so_far)
+    ):
+        try:
+            job = await start_ingestion(accepted.document_id, accepted.version_id, metadata, jobs)
+        except JobAlreadyActive as exc:
+            # A concurrent retry of the same upload started it first.
+            job = exc.job
+        return _accepted_response(
+            accepted, job.id, "Identical file was stored but never processed; ingestion started."
+        )
+
+    response.status_code = status.HTTP_200_OK
+    return _accepted_response(
+        accepted, None, "Identical file already ingested; returned existing document reference."
     )
 
 
@@ -293,6 +364,7 @@ async def get_version_elements(
     summary="Chunk and index a document version for retrieval",
 )
 async def index_document_version(
+    response: Response,
     document_id: uuid.UUID,
     version_id: uuid.UUID,
     force: bool = Query(
@@ -304,6 +376,12 @@ async def index_document_version(
     indexer: ChunkIndexer = Depends(get_chunk_indexer),
     lexical_indexer: LexicalIndexer = Depends(get_lexical_indexer),
     sparse_indexer: SparseIndexer = Depends(get_sparse_indexer),
+    idempotency: IdempotencyService = Depends(get_idempotency_service),
+    idempotency_key: str | None = Header(
+        default=None,
+        alias=IDEMPOTENCY_HEADER,
+        description="Retry-safe key: a repeat with the same key returns the first response",
+    ),
 ) -> IndexVersionResponse:
     """Chunk a persisted version and index its chunks into the vector store.
 
@@ -312,44 +390,60 @@ async def index_document_version(
     creates zero duplicate chunks and zero duplicate points. Stage 7 replaces this
     synchronous endpoint with the Celery chain while reusing these same functions.
     """
-    chunking = await chunking_service.chunk_version(session=session, version_id=version_id)
-    if chunking.document_id != document_id:
-        raise ValidationException(
-            f"Version '{version_id}' does not belong to document '{document_id}'"
+
+    async def index() -> IndexVersionResponse:
+        chunking = await chunking_service.chunk_version(session=session, version_id=version_id)
+        if chunking.document_id != document_id:
+            raise ValidationException(
+                f"Version '{version_id}' does not belong to document '{document_id}'"
+            )
+
+        indexing = await indexer.index_version(session=session, version_id=version_id, force=force)
+        lexical_indexed = 0
+        if indexer.settings.ENABLE_LEXICAL_INDEXING:
+            lexical = await lexical_indexer.index_version(session=session, version_id=version_id)
+            lexical_indexed = lexical.documents_indexed
+        sparse_encoded = 0
+        if indexer.settings.ENABLE_NEURAL_SPARSE:
+            sparse = await sparse_indexer.index_version(
+                session=session, version_id=version_id, force=force
+            )
+            sparse_encoded = sparse.documents_encoded
+
+        # Committed before the response is stored: a replayed answer must
+        # describe work that exists.
+        await session.commit()
+        return IndexVersionResponse(
+            document_id=document_id,
+            version_id=version_id,
+            strategy=chunking.strategy,
+            chunking_version=chunking.chunking_version,
+            chunks_created=chunking.chunks_created,
+            chunks_updated=chunking.chunks_updated,
+            chunks_removed=chunking.chunks_removed,
+            total_chunks=chunking.total_chunks,
+            total_tokens=chunking.total_tokens,
+            chunks_embedded=indexing.chunks_embedded,
+            chunks_already_indexed=indexing.chunks_skipped,
+            points_upserted=indexing.points_upserted,
+            embedding_version=indexing.embedding_version,
+            embedding_provider=indexing.provider,
+            embedding_dimensions=indexing.dimensions,
+            rate_limit_waits=indexing.rate_limit_waits,
+            lexical_documents_indexed=lexical_indexed,
+            sparse_documents_encoded=sparse_encoded,
+            was_noop=chunking.is_noop and indexing.is_noop,
         )
 
-    indexing = await indexer.index_version(session=session, version_id=version_id, force=force)
-    lexical_indexed = 0
-    if indexer.settings.ENABLE_LEXICAL_INDEXING:
-        lexical = await lexical_indexer.index_version(session=session, version_id=version_id)
-        lexical_indexed = lexical.documents_indexed
-    sparse_encoded = 0
-    if indexer.settings.ENABLE_NEURAL_SPARSE:
-        sparse = await sparse_indexer.index_version(
-            session=session, version_id=version_id, force=force
-        )
-        sparse_encoded = sparse.documents_encoded
-
-    return IndexVersionResponse(
-        document_id=document_id,
-        version_id=version_id,
-        strategy=chunking.strategy,
-        chunking_version=chunking.chunking_version,
-        chunks_created=chunking.chunks_created,
-        chunks_updated=chunking.chunks_updated,
-        chunks_removed=chunking.chunks_removed,
-        total_chunks=chunking.total_chunks,
-        total_tokens=chunking.total_tokens,
-        chunks_embedded=indexing.chunks_embedded,
-        chunks_already_indexed=indexing.chunks_skipped,
-        points_upserted=indexing.points_upserted,
-        embedding_version=indexing.embedding_version,
-        embedding_provider=indexing.provider,
-        embedding_dimensions=indexing.dimensions,
-        rate_limit_waits=indexing.rate_limit_waits,
-        lexical_documents_indexed=lexical_indexed,
-        sparse_documents_encoded=sparse_encoded,
-        was_noop=chunking.is_noop and indexing.is_noop,
+    return await run_idempotently(
+        idempotency,
+        operation="documents.index_version",
+        key=idempotency_key,
+        request_fingerprint=fingerprint(document_id, version_id, force),
+        response=response,
+        default_status=status.HTTP_200_OK,
+        model=IndexVersionResponse,
+        run=index,
     )
 
 

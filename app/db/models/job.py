@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base, TimestampMixin
@@ -25,6 +25,7 @@ class JobStatus(StrEnum):
 
 
 TERMINAL_STATUSES = frozenset({JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED})
+ACTIVE_JOB_PREDICATE = "status IN ('queued', 'running')"
 
 
 class JobType(StrEnum):
@@ -45,7 +46,20 @@ class JobType(StrEnum):
 
 class Job(Base, TimestampMixin):
     __tablename__ = "jobs"
-    __table_args__ = (Index("ix_jobs_document_created", "document_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_jobs_document_created", "document_id", "created_at"),
+        # One live job per step of a version (master §31 "unique job
+        # constraints"): a retried request or a replay racing the chain cannot
+        # start a second copy of work already queued or running.
+        Index(
+            "uq_jobs_active_step",
+            "version_id",
+            "task_type",
+            unique=True,
+            postgresql_where=text(ACTIVE_JOB_PREDICATE),
+            sqlite_where=text(ACTIVE_JOB_PREDICATE),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # Nullable: cleanup sweeps and evaluation runs are jobs with no document.

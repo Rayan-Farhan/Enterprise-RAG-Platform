@@ -3,7 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Uuid
+from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import Base, TimestampMixin
@@ -17,6 +17,8 @@ class Page(Base, TimestampMixin):
     """Page-level representation preserving document layout and visual coordinates."""
 
     __tablename__ = "pages"
+    # Backstop for ADR-036: a replayed normalize step cannot add a second copy.
+    __table_args__ = (UniqueConstraint("version_id", "page_number", name="uq_pages_version_page"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),

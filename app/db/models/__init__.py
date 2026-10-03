@@ -10,6 +10,7 @@ from app.db.models.evaluation import (
     QuestionResult,
 )
 from app.db.models.feedback import AnswerFeedback, AnswerRecord, FeedbackStatus
+from app.db.models.idempotency import IdempotencyRecord, IdempotencyState
 from app.db.models.job import Job, JobStatus, JobType
 from app.db.models.metadata import DocumentMetadata
 from app.db.models.page import Page
@@ -25,6 +26,8 @@ __all__ = [
     "Page",
     "Element",
     "Chunk",
+    "IdempotencyRecord",
+    "IdempotencyState",
     "ExperimentRun",
     "QuestionResult",
     "HumanReviewVerdict",

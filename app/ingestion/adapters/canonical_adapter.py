@@ -22,6 +22,24 @@ def compute_sha256(text: str | bytes) -> str:
     return hashlib.sha256(text).hexdigest()
 
 
+# Pages, elements and metadata derive their ids from the version they belong to
+# (ADR-036), so adapting the same parser output twice yields the same rows and a
+# replay collides with the uniqueness constraints instead of duplicating.
+CANONICAL_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "enterprise-rag/canonical-model")
+
+
+def page_identity(version_id: uuid.UUID, page_number: int) -> uuid.UUID:
+    return uuid.uuid5(CANONICAL_ID_NAMESPACE, f"{version_id}|page|{page_number}")
+
+
+def element_identity(version_id: uuid.UUID, element_id: str) -> uuid.UUID:
+    return uuid.uuid5(CANONICAL_ID_NAMESPACE, f"{version_id}|element|{element_id}")
+
+
+def metadata_identity(version_id: uuid.UUID) -> uuid.UUID:
+    return uuid.uuid5(CANONICAL_ID_NAMESPACE, f"{version_id}|metadata")
+
+
 def bbox_to_dict(bbox: BoundingBox | None) -> dict[str, Any] | None:
     """Convert BoundingBox pydantic model to canonical JSON structure."""
     if bbox is None:
@@ -92,7 +110,7 @@ class CanonicalAdapter:
         metadata_record: DocumentMetadata | None = None
         if metadata_dict:
             metadata_record = DocumentMetadata(
-                id=uuid.uuid4(),
+                id=metadata_identity(version_id),
                 version_id=version_id,
                 department=metadata_dict.get("department"),
                 policy_type=metadata_dict.get("policy_type"),
@@ -112,7 +130,7 @@ class CanonicalAdapter:
         global_seq_idx = 0
 
         for page in parsed_doc.pages:
-            page_id = uuid.uuid4()
+            page_id = page_identity(version_id, page.page_number)
             page_text_accum: list[str] = []
 
             # Page model
@@ -134,7 +152,7 @@ class CanonicalAdapter:
                     extra["heading_level"] = el.level
 
                 el_entity = Element(
-                    id=uuid.uuid4(),
+                    id=element_identity(version_id, el.element_id),
                     version_id=version_id,
                     page_id=page_id,
                     page_number=page.page_number,
@@ -159,7 +177,7 @@ class CanonicalAdapter:
                 page_text_accum.append(table_text)
 
                 tbl_entity = Element(
-                    id=uuid.uuid4(),
+                    id=element_identity(version_id, tbl.table_id),
                     version_id=version_id,
                     page_id=page_id,
                     page_number=page.page_number,
@@ -191,7 +209,7 @@ class CanonicalAdapter:
                 page_text_accum.append(caption)
 
                 fig_entity = Element(
-                    id=uuid.uuid4(),
+                    id=element_identity(version_id, fig.figure_id),
                     version_id=version_id,
                     page_id=page_id,
                     page_number=page.page_number,

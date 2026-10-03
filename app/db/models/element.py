@@ -3,7 +3,7 @@
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import Base, TimestampMixin
@@ -17,6 +17,10 @@ class Element(Base, TimestampMixin):
     """Atomic structural unit of a document preserving layout, coordinates, and provenance."""
 
     __tablename__ = "elements"
+    # Backstop for ADR-036: a replayed normalize step cannot add a second copy.
+    __table_args__ = (
+        UniqueConstraint("version_id", "element_id", name="uq_elements_version_element"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
