@@ -26,18 +26,18 @@ class DocumentMetadataInput(BaseModel):
     custom_attributes: dict[str, Any] = Field(default_factory=dict, description="Arbitrary custom attributes")
 
 
-class DocumentIngestResponse(BaseModel):
-    """Response returned upon document ingestion."""
+class DocumentIngestAccepted(BaseModel):
+    """Response to an upload: the document is stored and its ingestion enqueued (Task 7.3)."""
 
     document_id: uuid.UUID
     version_id: uuid.UUID
+    job_id: uuid.UUID | None = Field(
+        description="The chain's first job; null when the file was already ingested"
+    )
     filename: str
     file_hash: str
     storage_key: str
-    total_pages: int
-    total_elements: int
     is_duplicate: bool
-    created_at: datetime
     message: str
 
 

@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import ConflictException, NotFoundException
@@ -42,6 +43,10 @@ _ERROR_LIMIT = 4000
 
 class JobCancelled(Exception):
     """The job was cancelled; the task must stop without doing more work."""
+
+
+class JobAlreadyExists(Exception):
+    """A job with the requested id was already recorded."""
 
 
 class JobAlreadyFinished(Exception):
@@ -63,9 +68,12 @@ class JobService:
         queue: str,
         document_id: uuid.UUID | None = None,
         version_id: uuid.UUID | None = None,
+        job_id: uuid.UUID | None = None,
     ) -> Job:
+        """Record a queued job. A caller-chosen ``job_id`` that already exists raises
+        JobAlreadyExists, which is how a chain step is enqueued at most once."""
         job = Job(
-            id=uuid.uuid4(),
+            id=job_id or uuid.uuid4(),
             document_id=document_id,
             version_id=version_id,
             task_type=task_type,
@@ -76,7 +84,13 @@ class JobService:
         )
         async with self._sessions() as session:
             session.add(job)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                if job_id is None or await session.get(Job, job_id) is None:
+                    raise
+                raise JobAlreadyExists(str(job_id)) from None
         return job
 
     async def get(self, job_id: uuid.UUID) -> Job:

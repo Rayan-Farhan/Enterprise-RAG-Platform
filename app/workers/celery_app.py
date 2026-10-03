@@ -17,7 +17,7 @@ from app.core.config import AppSettings, get_settings
 from app.core.logging import setup_logging
 from app.workers.queues import MAX_PRIORITY, QueueDomain, build_queues
 
-TASK_MODULES = ("app.workers.tasks.diagnostics",)
+TASK_MODULES = ("app.workers.tasks.diagnostics", "app.workers.tasks.ingestion")
 
 
 def create_celery_app(settings: AppSettings | None = None) -> Celery:

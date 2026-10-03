@@ -49,10 +49,16 @@ class CanonicalAdapter:
         version_number: int = 1,
         status: str = VersionStatus.ACTIVE.value,
         supersedes_id: uuid.UUID | None = None,
+        document_id: uuid.UUID | None = None,
+        version_id: uuid.UUID | None = None,
     ) -> tuple[Document, DocumentVersion, list[Page], list[Element], DocumentMetadata | None]:
-        """Convert a ParsedDocument into canonical entities ready for persistence."""
-        doc_id = uuid.uuid4()
-        version_id = uuid.uuid4()
+        """Convert a ParsedDocument into canonical entities ready for persistence.
+
+        ``document_id`` and ``version_id`` adopt rows that already exist: the
+        async pipeline creates both when an upload is accepted, before parsing.
+        """
+        doc_id = document_id or uuid.uuid4()
+        version_id = version_id or uuid.uuid4()
 
         # 1. Document Root
         document = Document(

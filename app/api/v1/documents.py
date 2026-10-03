@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import (
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.schemas.documents import (
     DocumentDetailResponse,
-    DocumentIngestResponse,
+    DocumentIngestAccepted,
     DocumentListItem,
     DocumentListResponse,
     DocumentMetadataResponse,
@@ -32,7 +33,8 @@ from app.core.logging import get_logger
 from app.db.repositories.document_repo import DocumentRepository
 from app.db.session import get_db_session
 from app.ingestion.chunking.service import ChunkingService, get_chunking_service
-from app.ingestion.service import IngestionService, get_ingestion_service
+from app.ingestion.pipeline import accept_upload
+from app.jobs.service import JobService, get_job_service
 from app.retrieval.indexer import (
     ChunkIndexer,
     LexicalIndexer,
@@ -43,6 +45,7 @@ from app.retrieval.indexer import (
 )
 from app.storage.base import ObjectStorageProtocol
 from app.storage.minio_service import get_storage_service
+from app.workers.tasks.ingestion import start_ingestion
 
 logger = get_logger("app.api.documents")
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -50,9 +53,9 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 
 @router.post(
     "",
-    response_model=DocumentIngestResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Ingest a document into the canonical repository",
+    response_model=DocumentIngestAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Accept a document and start its ingestion chain",
 )
 async def ingest_document(
     response: Response,
@@ -62,12 +65,16 @@ async def ingest_document(
         description="Optional JSON-encoded string containing DocumentMetadataInput fields",
     ),
     session: AsyncSession = Depends(get_db_session),
-    ingestion_service: IngestionService = Depends(get_ingestion_service),
-) -> DocumentIngestResponse:
-    """Ingest a source document.
+    storage: ObjectStorageProtocol = Depends(get_storage_service),
+    jobs: JobService = Depends(get_job_service),
+) -> DocumentIngestAccepted:
+    """Store the upload and enqueue its ingestion (Task 7.3).
 
-    Uploads to object storage, parses via format router, maps into canonical models,
-    detects boilerplate/duplicates, and persists in PostgreSQL.
+    The request does no parsing: it stores the original, creates the document
+    with a draft version, and returns the first job's id. Follow the chain at
+    `GET /documents/{id}/jobs`; the version becomes active once every step has
+    run. An identical file already in the repository returns 200 with that
+    document and no new job.
     """
     settings = get_settings()
 
@@ -92,27 +99,29 @@ async def ingest_document(
         except json.JSONDecodeError as exc:
             raise ValidationException(f"Invalid JSON metadata payload: {exc}") from exc
 
-    result = await ingestion_service.ingest_document(
-        session=session,
+    accepted = await accept_upload(
+        session,
+        storage,
         file_content=content,
         filename=file.filename,
-        metadata_dict=metadata_dict,
+        content_type=file.content_type,
     )
-
-    if result.is_duplicate:
+    if accepted.is_duplicate:
         response.status_code = status.HTTP_200_OK
+        return DocumentIngestAccepted(
+            **asdict(accepted),
+            job_id=None,
+            message="Identical file already ingested; returned existing document reference.",
+        )
 
-    return DocumentIngestResponse(
-        document_id=result.document_id,
-        version_id=result.version_id,
-        filename=result.filename,
-        file_hash=result.file_hash,
-        storage_key=result.storage_key,
-        total_pages=result.total_pages,
-        total_elements=result.total_elements,
-        is_duplicate=result.is_duplicate,
-        created_at=result.created_at,
-        message=result.message,
+    # The job row references the document, so the document must be committed
+    # before a worker - in another process - can look either up.
+    await session.commit()
+    job = await start_ingestion(accepted.document_id, accepted.version_id, metadata_dict, jobs)
+    return DocumentIngestAccepted(
+        **asdict(accepted),
+        job_id=job.id,
+        message="Accepted; ingestion is running. Follow it at /documents/{id}/jobs.",
     )
 
 
@@ -243,7 +252,9 @@ async def get_version_elements(
     version_id: uuid.UUID,
     limit: int = Query(default=100, ge=1, le=500, description="Max elements to fetch"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
-    include_boilerplate: bool = Query(default=True, description="Include flagged boilerplate elements"),
+    include_boilerplate: bool = Query(
+        default=True, description="Include flagged boilerplate elements"
+    ),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[ElementResponse]:
     """Retrieve atomic canonical elements for a given document version."""
@@ -359,4 +370,3 @@ async def get_document_presigned_url(
 
     url = storage.get_presigned_url(doc.storage_key, expires_in_seconds=3600)
     return {"storage_key": doc.storage_key, "presigned_url": url}
-

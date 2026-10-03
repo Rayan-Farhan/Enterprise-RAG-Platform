@@ -181,6 +181,17 @@ class DocumentRepository:
         self.session.add(version)
         await self.session.flush()
 
+        await self.save_version_content(version, pages, elements, metadata_record)
+        return document
+
+    async def save_version_content(
+        self,
+        version: DocumentVersion,
+        pages: list[Page],
+        elements: list[Element],
+        metadata_record: DocumentMetadata | None = None,
+    ) -> None:
+        """Persist a version's pages, elements and metadata under an existing version row."""
         if metadata_record is not None:
             metadata_record.version_id = version.id
             self.session.add(metadata_record)
@@ -200,4 +211,3 @@ class DocumentRepository:
             self.session.add(element)
 
         await self.session.flush()
-        return document

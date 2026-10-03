@@ -15,6 +15,7 @@ from app.core.config import AppSettings, get_settings
 from app.core.exceptions import NotFoundException
 from app.core.logging import get_logger
 from app.db.models.chunk import Chunk
+from app.db.models.version import DocumentVersion
 from app.db.repositories.chunk_repo import ChunkRepository
 from app.db.repositories.document_repo import DocumentRepository
 from app.ingestion.chunking.base import compute_point_id
@@ -49,6 +50,26 @@ class IndexingResult:
         return self.chunks_embedded == 0
 
 
+class MissingVectorsError(RuntimeError):
+    """Chunks need vectors that were never computed, and computing them was not allowed."""
+
+
+@dataclass
+class PendingEmbedding:
+    """Vectors for the chunks of one version that lack a current point."""
+
+    version: DocumentVersion
+    chunks: list[Chunk]
+    vectors: dict[uuid.UUID, list[float]]
+    chunks_total: int
+    embedding_version: str
+    chunks_reused: int = 0
+    provider: str = "unknown"
+    dimensions: int = 0
+    embedding_latency_ms: float = 0.0
+    rate_limit_waits: int = 0
+
+
 class ChunkIndexer:
     """Embeds a version's chunks and upserts them into the vector store."""
 
@@ -75,6 +96,25 @@ class ChunkIndexer:
         is what Stage 5/6 experiments need when a parameter changes without a
         version bump.
         """
+        embedding = await self.embed_pending(session, version_id, force=force)
+        return await self.upsert_embedded(session, embedding)
+
+    async def embed_pending(
+        self,
+        session: AsyncSession,
+        version_id: uuid.UUID,
+        force: bool = False,
+        reusable: dict[uuid.UUID, list[float]] | None = None,
+        embed_missing: bool = True,
+    ) -> PendingEmbedding:
+        """Embed the chunks lacking a current vector, without writing anywhere.
+
+        ``reusable`` maps chunk IDs to vectors already computed for their current
+        content; those chunks are not sent to the provider again. The async
+        pipeline passes the vectors an earlier attempt persisted, so a replay
+        after a crash costs no metered calls. With ``embed_missing`` off, a chunk
+        that is not reusable raises instead of reaching the provider.
+        """
         doc_repo = DocumentRepository(session)
         chunk_repo = ChunkRepository(session)
 
@@ -95,39 +135,78 @@ class ChunkIndexer:
                 embedding_version=embedding_version,
             )
         )
+        result = PendingEmbedding(
+            version=version,
+            chunks=pending,
+            vectors={},
+            chunks_total=len(all_chunks),
+            embedding_version=embedding_version,
+        )
+        if not pending:
+            logger.info(
+                "indexing_noop_all_chunks_current",
+                version_id=str(version_id),
+                total=len(all_chunks),
+            )
+            return result
 
+        reusable = reusable or {}
+        result.vectors = {c.id: reusable[c.id] for c in pending if c.id in reusable}
+        to_embed = [c for c in pending if c.id not in result.vectors]
+        result.chunks_reused = len(result.vectors)
+
+        if to_embed and not embed_missing:
+            raise MissingVectorsError(
+                f"{len(to_embed)} chunks have no stored vector, e.g. {to_embed[0].id}"
+            )
+        if to_embed:
+            embedded = await self.embeddings.embed_texts([c.content for c in to_embed])
+            if len(embedded.vectors) != len(to_embed):
+                raise ValueError(
+                    f"Embedding count mismatch: {len(embedded.vectors)} vectors "
+                    f"for {len(to_embed)} chunks"
+                )
+            result.vectors.update(
+                (c.id, v) for c, v in zip(to_embed, embedded.vectors, strict=True)
+            )
+            result.provider = embedded.provider
+            result.embedding_latency_ms = embedded.total_latency_ms
+            result.rate_limit_waits = embedded.rate_limit_waits
+
+        result.dimensions = len(next(iter(result.vectors.values())))
+        return result
+
+    async def upsert_embedded(
+        self, session: AsyncSession, embedding: PendingEmbedding
+    ) -> IndexingResult:
+        """Upsert embedded chunks as vector points and record which point holds each."""
+        version = embedding.version
+        pending = embedding.chunks
+        embedding_version = embedding.embedding_version
         log = logger.bind(
-            version_id=str(version_id),
-            total=len(all_chunks),
-            pending=len(pending),
-            force=force,
+            version_id=str(version.id), total=embedding.chunks_total, pending=len(pending)
         )
 
         result = IndexingResult(
             document_id=version.document_id,
-            version_id=version_id,
-            chunks_total=len(all_chunks),
+            version_id=version.id,
+            chunks_total=embedding.chunks_total,
             chunks_embedded=0,
-            chunks_skipped=len(all_chunks) - len(pending),
+            chunks_skipped=embedding.chunks_total - len(pending),
             points_upserted=0,
             embedding_version=embedding_version,
         )
-
         if not pending:
-            log.info("indexing_noop_all_chunks_current")
             return result
 
-        embedded = await self.embeddings.embed_texts([c.content for c in pending])
-        if len(embedded.vectors) != len(pending):
-            raise ValueError(
-                f"Embedding count mismatch: {len(embedded.vectors)} vectors "
-                f"for {len(pending)} chunks"
-            )
+        missing = [c.id for c in pending if c.id not in embedding.vectors]
+        if missing:
+            raise ValueError(f"{len(missing)} pending chunks have no vector, e.g. {missing[0]}")
 
         # The collection is created with the dimensionality the provider actually
         # returned, not the configured guess, so a provider default change is a
         # loud failure at upsert rather than silent truncation.
-        self.vector_store.ensure_collection(dimensions=embedded.dimensions)
+        self.vector_store.ensure_collection(dimensions=embedding.dimensions)
 
         metadata = self._metadata_payload(version)
         document_title = version.document.title if version.document else None
@@ -135,13 +214,13 @@ class ChunkIndexer:
         points: list[VectorPoint] = []
         point_ids: dict[uuid.UUID, str] = {}
 
-        for chunk, vector in zip(pending, embedded.vectors, strict=True):
+        for chunk in pending:
             point_id = compute_point_id(chunk.id, embedding_version)
             point_ids[chunk.id] = point_id
             points.append(
                 VectorPoint(
                     point_id=point_id,
-                    vector=vector,
+                    vector=embedding.vectors[chunk.id],
                     payload=self._build_payload(
                         chunk=chunk,
                         embedding_version=embedding_version,
@@ -152,17 +231,17 @@ class ChunkIndexer:
             )
 
         result.points_upserted = self.vector_store.upsert(points)
-        await chunk_repo.mark_indexed(
+        await ChunkRepository(session).mark_indexed(
             chunk_ids=[c.id for c in pending],
             embedding_version=embedding_version,
             point_ids=point_ids,
         )
 
         result.chunks_embedded = len(pending)
-        result.provider = embedded.provider
-        result.dimensions = embedded.dimensions
-        result.embedding_latency_ms = embedded.total_latency_ms
-        result.rate_limit_waits = embedded.rate_limit_waits
+        result.provider = embedding.provider
+        result.dimensions = embedding.dimensions
+        result.embedding_latency_ms = embedding.embedding_latency_ms
+        result.rate_limit_waits = embedding.rate_limit_waits
 
         log.info(
             "indexing_complete",

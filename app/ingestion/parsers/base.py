@@ -4,7 +4,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ElementType(StrEnum):
@@ -70,6 +70,10 @@ class ParsedTable(BaseModel):
 
 class ParsedFigure(BaseModel):
     """Extracted figure or image asset."""
+
+    # Base64 in JSON: the async pipeline persists a ParsedDocument between tasks,
+    # and raw image bytes are not valid UTF-8.
+    model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
 
     figure_id: str
     caption: str | None = None

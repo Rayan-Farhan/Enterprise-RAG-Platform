@@ -12,6 +12,11 @@
 never pick up a job it cannot find. The Celery task id is the job id, which
 makes a broker message, a worker log line and an API response one identifier.
 
+A task registered with ``then`` is a link in a chain (Task 7.3): when its job
+succeeds, the next task is enqueued with the same arguments. The next job's id
+is derived from this one's, so a redelivered step that already succeeded - or
+two deliveries racing - enqueue the follow-up at most once.
+
 The body is async because the pipeline services it wraps are. Each execution
 runs on a fresh event loop with its own NullPool engine: a pooled asyncpg
 connection belongs to the loop that opened it, and worker threads each run
@@ -36,8 +41,8 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.db.models.job import Job
-from app.jobs.service import JobAlreadyFinished, JobCancelled, JobService
+from app.db.models.job import Job, JobStatus
+from app.jobs.service import JobAlreadyExists, JobAlreadyFinished, JobCancelled, JobService
 from app.workers.celery_app import celery_app
 from app.workers.queues import QueueDomain
 
@@ -45,14 +50,25 @@ logger = get_logger("app.workers.jobs")
 
 JobBody = Callable[..., Awaitable[None]]
 
+# Celery task name -> the job type its rows carry, and the task that follows it.
+_TASK_TYPES: dict[str, str] = {}
+_FOLLOW_UPS: dict[str, str] = {}
+
 
 class JobContext:
     """What a job body gets: its identity, progress reporting, and a database."""
 
     def __init__(
-        self, job_id: uuid.UUID, jobs: JobService, sessions: async_sessionmaker[AsyncSession]
+        self,
+        job_id: uuid.UUID,
+        jobs: JobService,
+        sessions: async_sessionmaker[AsyncSession],
+        document_id: uuid.UUID | None = None,
+        version_id: uuid.UUID | None = None,
     ) -> None:
         self.job_id = job_id
+        self.document_id = document_id
+        self.version_id = version_id
         self.sessions = sessions
         self._jobs = jobs
 
@@ -73,7 +89,13 @@ def create_worker_engine() -> AsyncEngine:
 worker_engine_factory: Callable[[], AsyncEngine] = create_worker_engine
 
 
-async def execute_job(body: JobBody, job_id: uuid.UUID, worker: str, kwargs: dict[str, Any]) -> str:
+async def execute_job(
+    body: JobBody,
+    job_id: uuid.UUID,
+    worker: str,
+    kwargs: dict[str, Any],
+    then: str | None = None,
+) -> str:
     """Run one delivery of a job and record how it ended. Returns the final status."""
     engine = worker_engine_factory()
     try:
@@ -89,11 +111,19 @@ async def execute_job(body: JobBody, job_id: uuid.UUID, worker: str, kwargs: dic
             logger.info(
                 "job already finished; skipping delivery", job_id=str(job_id), reason=str(exc)
             )
+            # The previous delivery may have died between recording success and
+            # enqueueing the next step; enqueueing is idempotent, so do it again.
+            if then is not None:
+                finished = await jobs.get(job_id)
+                if finished.status == JobStatus.SUCCEEDED:
+                    await enqueue_follow_up(jobs, finished, then, kwargs)
             return "skipped"
 
         logger.info("job started", job_id=str(job_id), task_type=job.task_type, attempt=job.attempt)
         try:
-            await body(JobContext(job_id, jobs, sessions), **kwargs)
+            await body(
+                JobContext(job_id, jobs, sessions, job.document_id, job.version_id), **kwargs
+            )
         except JobCancelled:
             await jobs.mark_cancelled(job_id)
             logger.info("job cancelled", job_id=str(job_id))
@@ -104,40 +134,93 @@ async def execute_job(body: JobBody, job_id: uuid.UUID, worker: str, kwargs: dic
             raise
         await jobs.succeed(job_id)
         logger.info("job succeeded", job_id=str(job_id))
+        if then is not None:
+            await enqueue_follow_up(jobs, job, then, kwargs)
         return "succeeded"
     finally:
         await engine.dispose()
 
 
-def job_task(*, name: str, queue: QueueDomain, **options: Any) -> Callable[[JobBody], Task]:
-    """Register an async job body as a Celery task on its queue."""
+def follow_up_job_id(job_id: uuid.UUID, next_task: str) -> uuid.UUID:
+    return uuid.uuid5(job_id, next_task)
+
+
+async def enqueue_follow_up(
+    jobs: JobService, job: Job, next_task: str, kwargs: dict[str, Any]
+) -> Job | None:
+    """Enqueue the chain step after ``job``, unless an earlier delivery already did."""
+    task = celery_app.tasks[next_task]
+    try:
+        return await enqueue(
+            task,
+            document_id=job.document_id,
+            version_id=job.version_id,
+            job_id=follow_up_job_id(job.id, next_task),
+            jobs=jobs,
+            **kwargs,
+        )
+    except JobAlreadyExists:
+        logger.info("follow-up already enqueued", job_id=str(job.id), next_task=next_task)
+        return None
+
+
+def job_task(
+    *,
+    name: str,
+    queue: QueueDomain,
+    task_type: str | None = None,
+    then: str | None = None,
+    **options: Any,
+) -> Callable[[JobBody], Task]:
+    """Register an async job body as a Celery task on its queue.
+
+    ``task_type`` is what the task's job rows record; ``then`` names the task
+    enqueued after this one succeeds.
+    """
 
     def decorator(body: JobBody) -> Task:
         def run(self: Task, job_id: str, **kwargs: Any) -> str:
             worker = self.request.hostname or "unknown"
-            return asyncio.run(execute_job(body, uuid.UUID(job_id), worker, kwargs))
+            return asyncio.run(execute_job(body, uuid.UUID(job_id), worker, kwargs, then=then))
 
         run.__name__ = body.__name__
         run.__doc__ = body.__doc__
+        if task_type is not None:
+            _TASK_TYPES[name] = task_type
+        if then is not None:
+            _FOLLOW_UPS[name] = then
         return celery_app.task(name=name, queue=queue.value, bind=True, **options)(run)
 
     return decorator
 
 
+def follow_up_of(task_name: str) -> str | None:
+    """The task a chain step hands over to, or None at the end of a chain."""
+    return _FOLLOW_UPS.get(task_name)
+
+
 async def enqueue(
     task: Task,
     *,
-    task_type: str,
+    task_type: str | None = None,
     document_id: uuid.UUID | None = None,
     version_id: uuid.UUID | None = None,
+    job_id: uuid.UUID | None = None,
     jobs: JobService | None = None,
     **kwargs: Any,
 ) -> Job:
     """Record a job, then publish it to its task's queue."""
     jobs = jobs or JobService()
+    task_type = task_type or _TASK_TYPES.get(task.name)
+    if task_type is None:
+        raise ValueError(f"Task {task.name!r} declares no job type; pass task_type")
     queue = task.queue
     job = await jobs.create(
-        task_type=task_type, queue=queue, document_id=document_id, version_id=version_id
+        task_type=task_type,
+        queue=queue,
+        document_id=document_id,
+        version_id=version_id,
+        job_id=job_id,
     )
     try:
         await asyncio.to_thread(
