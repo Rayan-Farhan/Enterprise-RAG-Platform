@@ -626,8 +626,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     results: dict[str, Any] = {}
     skipped: dict[str, str] = {}
     for name in args.parsers:
+        cached = all((CACHE_DIR / name / f"{pdf.stem}.json").exists() for pdf in pdfs)
         try:
-            PARSERS[name][0]()
+            # Rescoring a fully cached parser needs neither its engine nor its
+            # backend server; only a run that will parse checks they exist.
+            if not (args.reuse and cached):
+                PARSERS[name][0]()
         except ImportError as exc:
             skipped[name] = str(exc)
             print(f"skip {name}: {exc}")
