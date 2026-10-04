@@ -1,0 +1,80 @@
+{
+  "measured_at": "2026-10-04T15:07:51+00:00",
+  "machine": "Intel64 Family 6 Model 154 Stepping 4, GenuineIntel / 8 threads / Windows 10",
+  "spacing_s": 0.0,
+  "results": [
+    {
+      "config": "dense",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "dense"
+      },
+      "n": 32,
+      "p50_s": 1.153,
+      "p95_s": 1.804,
+      "max_s": 1.844
+    },
+    {
+      "config": "bm25",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "bm25"
+      },
+      "n": 32,
+      "p50_s": 0.076,
+      "p95_s": 0.123,
+      "max_s": 0.142
+    },
+    {
+      "config": "sparse",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "sparse"
+      },
+      "n": 32,
+      "p50_s": 0.133,
+      "p95_s": 0.199,
+      "max_s": 0.223
+    },
+    {
+      "config": "rrf-all",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "hybrid"
+      },
+      "n": 32,
+      "p50_s": 1.12,
+      "p95_s": 1.623,
+      "max_s": 2.138
+    },
+    {
+      "config": "weighted-all",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "hybrid",
+        "FUSION_METHOD": "weighted"
+      },
+      "n": 32,
+      "p50_s": 1.237,
+      "p95_s": 1.374,
+      "max_s": 1.534
+    },
+    {
+      "config": "baseline-dense-fixed",
+      "settings": {
+        "CHUNKING_STRATEGY": "fixed",
+        "CHUNKING_VERSION": "fixed-s512-o64",
+        "RETRIEVAL_MODE": "dense"
+      },
+      "n": 32,
+      "p50_s": 1.201,
+      "p95_s": 1.391,
+      "max_s": 2.101
+    }
+  ]
+}

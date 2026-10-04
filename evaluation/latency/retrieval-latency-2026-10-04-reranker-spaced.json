@@ -1,0 +1,32 @@
+{
+  "measured_at": "2026-10-04T15:17:00+00:00",
+  "machine": "Intel64 Family 6 Model 154 Stepping 4, GenuineIntel / 8 threads / Windows 10",
+  "spacing_s": 7.0,
+  "results": [
+    {
+      "config": "sparse",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "sparse"
+      },
+      "n": 32,
+      "p50_s": 0.152,
+      "p95_s": 0.304,
+      "max_s": 0.393
+    },
+    {
+      "config": "sparse+rerank",
+      "settings": {
+        "CHUNKING_STRATEGY": "contextual",
+        "CHUNKING_VERSION": "contextual-s256-o32",
+        "RETRIEVAL_MODE": "sparse",
+        "ENABLE_RERANKING": true
+      },
+      "n": 32,
+      "p50_s": 1.279,
+      "p95_s": 1.602,
+      "max_s": 1.644
+    }
+  ]
+}
