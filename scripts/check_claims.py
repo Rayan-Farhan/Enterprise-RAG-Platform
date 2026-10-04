@@ -53,6 +53,9 @@ class ClaimContext:
         if ref in self.runs:
             return self.runs[ref]
         matches = [name for name in self.runs if name.removeprefix("experiment-").startswith(ref)]
+        if "verify" not in ref:
+            # Docs quote the original records; re-runs are named explicitly.
+            matches = [name for name in matches if "verify" not in name]
         if len(matches) != 1:
             raise KeyError(f"run reference {ref!r} matches {matches or 'nothing'}")
         return self.runs[matches[0]]

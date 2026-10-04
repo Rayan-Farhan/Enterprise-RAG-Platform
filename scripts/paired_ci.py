@@ -27,6 +27,8 @@ def resolve(runs: Mapping[str, Any], ref: str) -> str:
     if ref in runs:
         return ref
     matches = [name for name in runs if name.removeprefix("experiment-").startswith(ref)]
+    if "verify" not in ref:
+        matches = [name for name in matches if "verify" not in name]
     exact = [name for name in matches if name.removeprefix("experiment-") == ref]
     if len(exact) == 1:
         return exact[0]
