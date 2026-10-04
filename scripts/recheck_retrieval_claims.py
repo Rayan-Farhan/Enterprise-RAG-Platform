@@ -11,6 +11,15 @@
    chunking (fixed 512/64), to see whether ``RETRIEVAL_MIN_SCORE`` = 0.35 sits
    in a gap. The original figure came from five hand-probed queries.
 
+4. **Reranker cost (Task 6.5).** Jina-reported tokens for one 20-candidate
+   rerank, over ten dev questions, spaced under the provider's minute limit.
+5. **Parent-expansion budget (Task 5.2).** On experiment 004's 50 questions
+   (hierarchical_contextual 256/32, dense, expansion on): parents expanded,
+   leaves dropped for the expansion budget, and chunks the context assembler
+   dropped for the generation budget.
+6. **Chunk sizes (ADR-006).** Mean stored token count of hierarchical leaves
+   and of contextual 256/32 chunks.
+
     python -m scripts.recheck_retrieval_claims
 
 Needs the full stack with the contextual 256/32 and fixed 512/64 chunk sets
@@ -127,12 +136,89 @@ async def score_separation(session: Any) -> dict[str, Any]:
     }
 
 
+async def rerank_tokens(session: Any) -> dict[str, Any]:
+    from app.models.gateway import get_model_gateway
+
+    sparse = get_retriever(AppSettings(**C256, RETRIEVAL_MODE="sparse"))
+    gateway = get_model_gateway()
+    totals: list[int] = []
+    questions = [q for q in load_split(DatasetSplit.DEV) if q.expected_element_ids()][::8][:10]
+    for question in questions:
+        pool = await sparse.retrieve(query=question.question, session=session, top_k=20)
+        result = await gateway.rerank(
+            query=question.question, documents=[c.content for c in pool.chunks], top_k=8
+        )
+        totals.append(int(result.metadata.token_counts.total_tokens))
+        await asyncio.sleep(7)  # stay under 100k tokens/minute
+    ordered = sorted(totals)
+    return {
+        "calls": len(ordered),
+        "candidates": 20,
+        "tokens_min": ordered[0],
+        "tokens_median": ordered[len(ordered) // 2],
+        "tokens_max": ordered[-1],
+    }
+
+
+async def expansion_budget(session: Any) -> dict[str, Any]:
+    from pathlib import Path
+
+    from app.generation.context import ContextAssembler
+    from app.retrieval.expansion import ParentExpander
+
+    settings = AppSettings(
+        CHUNKING_STRATEGY="hierarchical_contextual",
+        CHUNKING_VERSION="hierarchical_contextual-s256-o32",
+        RETRIEVAL_MODE="dense",
+        ENABLE_PARENT_EXPANSION=True,
+    )
+    record = Path("evaluation/results/experiment-004-hc-256-32-expand.json")
+    wanted = {r["question_id"] for r in json.loads(record.read_text(encoding="utf-8"))["results"]}
+    retriever = get_retriever(settings)
+    expander = ParentExpander(settings)
+    assembler = ContextAssembler()
+    tally = {"questions": 0, "expanded": 0, "kept_as_leaf": 0, "dropped_for_budget": 0}
+    assembly_dropped = 0
+    for question in load_split(DatasetSplit.DEV):
+        if question.question_id not in wanted:
+            continue
+        tally["questions"] += 1
+        retrieval = await retriever.retrieve(query=question.question, session=session)
+        expanded = await expander.expand(retrieval.chunks, session=session)
+        tally["expanded"] += expanded.expanded
+        tally["kept_as_leaf"] += expanded.kept_as_leaf
+        tally["dropped_for_budget"] += expanded.dropped_for_budget
+        context = assembler.assemble(query=question.question, chunks=expanded.chunks)
+        assembly_dropped += int(getattr(context, "dropped_for_budget", 0) or 0)
+    return {**tally, "assembly_dropped_for_budget": assembly_dropped}
+
+
+async def chunk_sizes(session: Any) -> dict[str, Any]:
+    from sqlalchemy import func, select
+
+    from app.db.models.chunk import Chunk
+
+    async def mean(version: str, leaves_only: bool) -> float:
+        query = select(func.avg(Chunk.token_count)).where(Chunk.chunking_version == version)
+        if leaves_only:
+            query = query.where(Chunk.parent_chunk_id.is_not(None))
+        return round(float((await session.execute(query)).scalar() or 0), 1)
+
+    return {
+        "hierarchical-s512-o64 leaves": await mean("hierarchical-s512-o64", True),
+        "contextual-s256-o32 chunks": await mean("contextual-s256-o32", False),
+    }
+
+
 async def run() -> dict[str, Any]:
     async with get_session_factory()() as session:
         return {
             "code_queries": await code_queries(session),
             "narrowing": await narrowing(session),
             "score_separation": await score_separation(session),
+            "rerank_tokens": await rerank_tokens(session),
+            "expansion_budget": await expansion_budget(session),
+            "chunk_sizes": await chunk_sizes(session),
         }
 
 
