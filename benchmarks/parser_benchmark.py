@@ -137,6 +137,14 @@ def _opendataloader_hybrid() -> DocumentParser:
     return OpenDataLoaderParser(hybrid_url=HYBRID_URL)
 
 
+def _routed() -> DocumentParser:
+    _docling()  # both engines must be importable for a true routed run
+    _opendataloader()
+    from app.ingestion.parsers.routed_parser import RoutedPdfParser
+
+    return RoutedPdfParser()
+
+
 #: name -> (factory, one-line description for the report)
 PARSERS: dict[str, tuple[Callable[[], DocumentParser], str]] = {
     "pymupdf-layout": (_layout, "PyMuPDF + typography heuristics (production primary)"),
@@ -148,6 +156,10 @@ PARSERS: dict[str, tuple[Callable[[], DocumentParser], str]] = {
         _opendataloader_hybrid,
         "OpenDataLoader hybrid: local engine + Docling backend for complex pages "
         "(auto triage, heading hierarchy, OCR on image regions)",
+    ),
+    "routed": (
+        _routed,
+        "Page-routed: OpenDataLoader for grid pages, Docling for prose (OCR for image-only pages)",
     ),
 }
 

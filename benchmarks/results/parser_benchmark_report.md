@@ -1,6 +1,6 @@
 # Parser Benchmark Report (ADR-004)
 
-**Generated:** 2026-10-04 18:44 · `python -m benchmarks.parser_benchmark`
+**Generated:** 2026-10-04 23:32 · `python -m benchmarks.parser_benchmark`
 
 ## Coverage
 
@@ -16,68 +16,69 @@
 * `docling` — Docling layout + TableFormer models, OCR off
 * `opendataloader` — OpenDataLoader PDF, rule-based (Java)
 * `opendataloader-hybrid` — OpenDataLoader hybrid: local engine + Docling backend for complex pages (auto triage, heading hierarchy, OCR on image regions)
+* `routed` — Page-routed: OpenDataLoader for grid pages, Docling for prose (OCR for image-only pages)
 
 ## Scorecard
 
-| metric | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` |
-|---|---:|---:|---:|---:|---:|---:|
-| Text recall vs OCR (micro) | 98.4% | 98.4% | 98.5% | 98.2% | 98.1% | 94.8% |
-| Text recall vs OCR (macro, per doc) | 95.5% | 95.5% | 95.8% | 95.6% | 95.1% | 93.6% |
-| Text recall vs hand pages | 99.9% | 99.9% | 99.9% | 99.6% | 98.8% | 90.6% |
-| Text precision (1 − extra words) | 98.8% | 98.8% | 94.2% | 98.6% | 99.1% | 98.3% |
-| Reading-order similarity | 96.9% | 94.0% | 96.1% | 96.7% | 97.0% | 93.9% |
-| Paragraphs intact (≥95% in order) | 99.5% | 99.5% | 99.5% | 98.4% | 93.1% | 79.4% |
-| Heading precision | 25.0% | 80.0% | 88.9% | 89.5% | 85.7% | 84.6% |
-| Heading recall | 32.2% | 13.6% | 13.6% | 86.4% | 50.8% | 74.6% |
-| Heading F1 | 28.1% | 23.2% | 23.5% | 87.9% | 63.8% | 79.3% |
-| Elements typed heading (corpus) | 29.1% | 3.8% | 3.3% | 16.1% | 9.4% | 13.8% |
-| Tables found (annotated pages) | 90.9% | 90.9% | 90.9% | 81.8% | 90.9% | 36.4% |
-| Table precision (annotated pages) | 83.3% | 83.3% | 90.9% | 69.2% | 100.0% | 33.3% |
-| Cell recall (multiset) | 78.6% | 78.6% | 78.6% | 62.6% | 80.2% | 12.2% |
-| Cell recall (by position) | 66.4% | 66.4% | 66.4% | 59.5% | 83.2% | 12.2% |
-| Page + box provenance | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% |
-| Speed (ms/page) | 221 | 235 | 235 | 3,631 | 95 | 14,723 |
+| metric | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` | `routed` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Text recall vs OCR (micro) | 98.4% | 98.4% | 98.5% | 98.2% | 98.1% | 94.8% | 98.2% |
+| Text recall vs OCR (macro, per doc) | 95.5% | 95.5% | 95.8% | 95.6% | 95.1% | 93.6% | 95.4% |
+| Text recall vs hand pages | 99.9% | 99.9% | 99.9% | 99.6% | 98.8% | 90.6% | 99.6% |
+| Text precision (1 − extra words) | 98.8% | 98.8% | 94.2% | 98.6% | 99.1% | 98.3% | 98.7% |
+| Reading-order similarity | 96.9% | 94.0% | 96.1% | 96.7% | 97.0% | 93.9% | 96.9% |
+| Paragraphs intact (≥95% in order) | 99.5% | 99.5% | 99.5% | 98.4% | 93.1% | 79.4% | 98.4% |
+| Heading precision | 25.0% | 80.0% | 88.9% | 89.5% | 85.7% | 84.6% | 88.9% |
+| Heading recall | 32.2% | 13.6% | 13.6% | 86.4% | 50.8% | 74.6% | 81.4% |
+| Heading F1 | 28.1% | 23.2% | 23.5% | 87.9% | 63.8% | 79.3% | 85.0% |
+| Elements typed heading (corpus) | 29.1% | 3.8% | 3.3% | 16.1% | 9.4% | 13.8% | 15.7% |
+| Tables found (annotated pages) | 90.9% | 90.9% | 90.9% | 81.8% | 90.9% | 36.4% | 100.0% |
+| Table precision (annotated pages) | 83.3% | 83.3% | 90.9% | 69.2% | 100.0% | 33.3% | 91.7% |
+| Cell recall (multiset) | 78.6% | 78.6% | 78.6% | 62.6% | 80.2% | 12.2% | 96.9% |
+| Cell recall (by position) | 66.4% | 66.4% | 66.4% | 59.5% | 83.2% | 12.2% | 100.0% |
+| Page + box provenance | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% |
+| Speed (ms/page) | 221 | 235 | 235 | 3,631 | 95 | 14,723 | 12,737 |
 
 ## Per document (micro within the document)
 
 **text recall**
 
-| document | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` |
-|---|---:|---:|---:|---:|---:|---:|
-| `bcbs_dental_booklet_2026.pdf` | 96.0% | 96.0% | 96.0% | 95.9% | 95.8% | 95.9% |
-| `bcbs_health_booklet_2026.pdf` | 97.7% | 97.7% | 97.7% | 97.5% | 97.5% | 97.4% |
-| `dental_plan_at_a_glance_2026.pdf` | 80.7% | 80.7% | 82.3% | 82.1% | 80.9% | 80.7% |
-| `health_plan_at_a_glance_2026.pdf` | 93.3% | 93.3% | 93.5% | 93.2% | 91.5% | 91.5% |
-| `organizational_structure.pdf` | 97.9% | 97.9% | 97.9% | 97.9% | 96.8% | 97.9% |
-| `staff_handbook.pdf` | 99.4% | 99.4% | 99.6% | 99.4% | 99.4% | 99.1% |
-| `una-faculty-handbook-2026-27-initial-version.8-1-26.pdf` | 99.9% | 99.9% | 99.9% | 99.3% | 99.8% | 98.8% |
-| `university_employee_policy_manual_and_handbook.pdf` | 99.1% | 99.1% | 99.5% | 99.2% | 98.7% | 87.3% |
+| document | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` | `routed` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `bcbs_dental_booklet_2026.pdf` | 96.0% | 96.0% | 96.0% | 95.9% | 95.8% | 95.9% | 96.0% |
+| `bcbs_health_booklet_2026.pdf` | 97.7% | 97.7% | 97.7% | 97.5% | 97.5% | 97.4% | 97.5% |
+| `dental_plan_at_a_glance_2026.pdf` | 80.7% | 80.7% | 82.3% | 82.1% | 80.9% | 80.7% | 82.1% |
+| `health_plan_at_a_glance_2026.pdf` | 93.3% | 93.3% | 93.5% | 93.2% | 91.5% | 91.5% | 92.0% |
+| `organizational_structure.pdf` | 97.9% | 97.9% | 97.9% | 97.9% | 96.8% | 97.9% | 97.9% |
+| `staff_handbook.pdf` | 99.4% | 99.4% | 99.6% | 99.4% | 99.4% | 99.1% | 99.4% |
+| `una-faculty-handbook-2026-27-initial-version.8-1-26.pdf` | 99.9% | 99.9% | 99.9% | 99.3% | 99.8% | 98.8% | 99.3% |
+| `university_employee_policy_manual_and_handbook.pdf` | 99.1% | 99.1% | 99.5% | 99.2% | 98.7% | 87.3% | 99.2% |
 
 **heading F1**
 
-| document | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` |
-|---|---:|---:|---:|---:|---:|---:|
-| `bcbs_dental_booklet_2026.pdf` | 69.2% | 37.5% | 37.5% | 96.3% | 100.0% | 96.3% |
-| `bcbs_health_booklet_2026.pdf` | 82.4% | 50.0% | 50.0% | 100.0% | 88.9% | 100.0% |
-| `dental_plan_at_a_glance_2026.pdf` | 0.0% | 28.6% | 28.6% | 66.7% | 40.0% | 66.7% |
-| `health_plan_at_a_glance_2026.pdf` | n/a | n/a | n/a | 85.7% | 50.0% | 85.7% |
-| `organizational_structure.pdf` | 0.0% | n/a | n/a | 0.0% | 0.0% | 0.0% |
-| `staff_handbook.pdf` | 5.1% | n/a | n/a | 96.0% | 14.3% | 87.0% |
-| `una-faculty-handbook-2026-27-initial-version.8-1-26.pdf` | 18.2% | 25.0% | 28.6% | 100.0% | 90.9% | 100.0% |
-| `university_employee_policy_manual_and_handbook.pdf` | 7.4% | n/a | n/a | 71.4% | n/a | 0.0% |
+| document | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` | `routed` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `bcbs_dental_booklet_2026.pdf` | 69.2% | 37.5% | 37.5% | 96.3% | 100.0% | 96.3% | 96.3% |
+| `bcbs_health_booklet_2026.pdf` | 82.4% | 50.0% | 50.0% | 100.0% | 88.9% | 100.0% | 100.0% |
+| `dental_plan_at_a_glance_2026.pdf` | 0.0% | 28.6% | 28.6% | 66.7% | 40.0% | 66.7% | 44.4% |
+| `health_plan_at_a_glance_2026.pdf` | n/a | n/a | n/a | 85.7% | 50.0% | 85.7% | 50.0% |
+| `organizational_structure.pdf` | 0.0% | n/a | n/a | 0.0% | 0.0% | 0.0% | 0.0% |
+| `staff_handbook.pdf` | 5.1% | n/a | n/a | 96.0% | 14.3% | 87.0% | 96.0% |
+| `una-faculty-handbook-2026-27-initial-version.8-1-26.pdf` | 18.2% | 25.0% | 28.6% | 100.0% | 90.9% | 100.0% | 100.0% |
+| `university_employee_policy_manual_and_handbook.pdf` | 7.4% | n/a | n/a | 71.4% | n/a | 0.0% | 71.4% |
 
 **cell recall by position**
 
-| document | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` |
-|---|---:|---:|---:|---:|---:|---:|
-| `bcbs_dental_booklet_2026.pdf` | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 75.0% |
-| `bcbs_health_booklet_2026.pdf` | 81.2% | 81.2% | 81.2% | 100.0% | 100.0% | 25.0% |
-| `dental_plan_at_a_glance_2026.pdf` | 53.3% | 53.3% | 53.3% | 0.0% | 100.0% | 0.0% |
-| `health_plan_at_a_glance_2026.pdf` | 80.6% | 80.6% | 80.6% | 38.7% | 100.0% | 0.0% |
-| `organizational_structure.pdf` | n/a | n/a | n/a | n/a | n/a | n/a |
-| `staff_handbook.pdf` | 0.0% | 0.0% | 0.0% | 100.0% | 0.0% | 0.0% |
-| `una-faculty-handbook-2026-27-initial-version.8-1-26.pdf` | n/a | n/a | n/a | n/a | n/a | n/a |
-| `university_employee_policy_manual_and_handbook.pdf` | n/a | n/a | n/a | n/a | n/a | n/a |
+| document | `pymupdf-layout` | `pymupdf-columns` | `pymupdf` | `docling` | `opendataloader` | `opendataloader-hybrid` | `routed` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `bcbs_dental_booklet_2026.pdf` | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 75.0% | 100.0% |
+| `bcbs_health_booklet_2026.pdf` | 81.2% | 81.2% | 81.2% | 100.0% | 100.0% | 25.0% | 100.0% |
+| `dental_plan_at_a_glance_2026.pdf` | 53.3% | 53.3% | 53.3% | 0.0% | 100.0% | 0.0% | 100.0% |
+| `health_plan_at_a_glance_2026.pdf` | 80.6% | 80.6% | 80.6% | 38.7% | 100.0% | 0.0% | 100.0% |
+| `organizational_structure.pdf` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
+| `staff_handbook.pdf` | 0.0% | 0.0% | 0.0% | 100.0% | 0.0% | 0.0% | 100.0% |
+| `una-faculty-handbook-2026-27-initial-version.8-1-26.pdf` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
+| `university_employee_policy_manual_and_handbook.pdf` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 
 ## How to read this
 
