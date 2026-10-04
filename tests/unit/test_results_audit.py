@@ -101,3 +101,24 @@ def test_claim_without_expression_passes_its_status_through() -> None:
     context = ClaimContext({})
     result = check({"id": "c", "claim": "x", "status": "pending", "note": "Phase 3"}, context)
     assert result.status == "pending" and result.note == "Phase 3"
+
+
+def test_a_newer_measurement_supersedes_a_matching_record() -> None:
+    old = [_row("a", retrieval={"recall@5": 0.0}), _row("b", retrieval={"recall@5": 1.0})]
+    new = [_row("a", retrieval={"recall@5": 1.0}), _row("b", retrieval={"recall@5": 1.0})]
+    context = ClaimContext(
+        {
+            "experiment-002-x": _run(old, {"recall@5": 0.5}),
+            "experiment-002-x-verify": _run(new, {"recall@5": 1.0}),
+        }
+    )
+    claim = {
+        "id": "c",
+        "claim": "r@5",
+        "stated": "0.50",
+        "expr": "m('experiment-002-x','recall@5')",
+        "supersede_expr": "m('experiment-002-x-verify','recall@5')",
+    }
+    result = check(claim, context)
+    assert result.status == "corrected" and result.verified == "1.00"
+    assert "re-measured" in result.note

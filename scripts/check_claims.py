@@ -190,7 +190,29 @@ def check(claim: Mapping[str, Any], context: ClaimContext) -> ClaimResult:
     if status == "confirmed" and claim.get("corrected"):
         status = "corrected"
         note = f"{claim['corrected']} {note}".strip()
-    return ClaimResult(**base, verified=verified, status=status, evidence=f"`{expr}`", note=note)
+    evidence = f"`{expr}`"
+
+    # A newer measurement of the same quantity (e.g. a "-verify" re-run) can
+    # supersede the record the claim was copied from: the claim may match its
+    # source and still be wrong about the system.
+    supersede = claim.get("supersede_expr")
+    if supersede and stated is not None:
+        try:
+            newer = float(eval(supersede, {"__builtins__": {}}, context.namespace()))  # noqa: S307
+        except Exception as exc:  # noqa: BLE001
+            return ClaimResult(
+                **base, verified=verified, status="error", evidence=f"`{supersede}`", note=str(exc)
+            )
+        target = float(str(stated).replace("−", "-"))
+        if not math.isclose(newer, target, abs_tol=0.5 * 10**-decimals + 1e-9):
+            status = "corrected"
+            note = (
+                f"Matches its record ({verified}) but re-measured as {_format(newer, decimals)}. "
+                f"{note}"
+            ).strip()
+            verified = _format(newer, decimals)
+        evidence = f"`{expr}`; re-measured: `{supersede}`"
+    return ClaimResult(**base, verified=verified, status=status, evidence=evidence, note=note)
 
 
 def format_markdown(results: Sequence[ClaimResult]) -> str:
