@@ -11,6 +11,7 @@ from pathlib import Path
 
 import structlog
 
+from app.core.config import get_settings
 from app.ingestion.parsers.base import DocumentParser, ParsedDocument
 from app.ingestion.parsers.column_heuristic_parser import ColumnHeuristicParser
 from app.ingestion.parsers.layout_heuristic_parser import LayoutHeuristicParser
@@ -18,6 +19,28 @@ from app.ingestion.parsers.office_parser import OfficeParser
 from app.ingestion.parsers.pymupdf_parser import PyMuPDFParser
 
 logger = structlog.get_logger(__name__)
+
+
+def primary_pdf_parser(choice: str | None = None) -> DocumentParser:
+    """The primary PDF parser ``PDF_PARSER`` selects (ADR-004).
+
+    The optional engines are imported only when chosen, so the default install
+    never needs Docling, PyTorch or Java.
+    """
+    choice = choice or get_settings().PDF_PARSER
+    if choice == "docling":
+        from app.ingestion.parsers.docling_parser import DoclingParser
+
+        return DoclingParser()
+    if choice == "opendataloader":
+        from app.ingestion.parsers.opendataloader_parser import OpenDataLoaderParser
+
+        return OpenDataLoaderParser()
+    if choice == "routed":
+        from app.ingestion.parsers.routed_parser import RoutedPdfParser
+
+        return RoutedPdfParser()
+    return LayoutHeuristicParser()
 
 
 class FormatRouter:
@@ -29,7 +52,7 @@ class FormatRouter:
         pdf_fallbacks: list[DocumentParser] | None = None,
         office_parser: DocumentParser | None = None,
     ) -> None:
-        self.pdf_primary = pdf_primary or LayoutHeuristicParser()
+        self.pdf_primary = pdf_primary or primary_pdf_parser()
         self.pdf_fallbacks = pdf_fallbacks or [ColumnHeuristicParser(), PyMuPDFParser()]
         self.office_parser = office_parser or OfficeParser()
 

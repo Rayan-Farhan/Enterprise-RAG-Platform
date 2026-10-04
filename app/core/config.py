@@ -131,6 +131,14 @@ class AppSettings(BaseSettings):
     TEI_EMBED_BASE_URL: str = "http://localhost:8080"
     TEI_RERANK_BASE_URL: str = "http://localhost:8081"
 
+    # PDF parsing (ADR-004). "heuristic" is the production default; the others
+    # need the optional `parsers` extra (and Java 11+ for OpenDataLoader).
+    # "routed" sends grid pages to OpenDataLoader and prose/image pages to Docling.
+    PDF_PARSER: Literal["heuristic", "docling", "opendataloader", "routed"] = Field(
+        default="heuristic",
+        description="Primary PDF parser; the PyMuPDF heuristics remain the fallback chain",
+    )
+
     # Chunking (ADR-006, ADR-036; strategies from Task 5.1)
     CHUNKING_STRATEGY: Literal[
         "fixed",
@@ -184,7 +192,7 @@ class AppSettings(BaseSettings):
     HYBRID_CHANNELS: list[Literal["dense", "bm25", "sparse"]] = Field(
         # A plain default is safe: pydantic copies mutable defaults per instance.
         default=["dense", "bm25", "sparse"],
-        description="Channels fused in hybrid mode, e.g. '[\"bm25\", \"sparse\"]'",
+        description='Channels fused in hybrid mode, e.g. \'["bm25", "sparse"]\'',
     )
     FUSION_METHOD: Literal["rrf", "weighted"] = Field(
         default="rrf",

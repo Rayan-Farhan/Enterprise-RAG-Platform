@@ -41,14 +41,14 @@ _LABEL_TYPES: dict[str, ElementType] = {
 }
 
 
-@lru_cache(maxsize=1)
-def _converter() -> Any:
-    """Build the converter once; loading the layout and table models is the slow part."""
+@lru_cache(maxsize=2)
+def _converter(do_ocr: bool = False) -> Any:
+    """Build each converter once; loading the layout, table and OCR models is the slow part."""
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    options = PdfPipelineOptions(do_ocr=False, do_table_structure=True)
+    options = PdfPipelineOptions(do_ocr=do_ocr, do_table_structure=True)
     return DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
     )
@@ -81,12 +81,20 @@ class DoclingParser:
 
     parser_name: str = "docling"
 
+    def __init__(self, do_ocr: bool = False) -> None:
+        """``do_ocr`` turns on OCR for bitmap regions (scanned or image-only pages).
+
+        Off by default: on born-digital pages the text layer is exact and OCR only
+        adds time and the chance of a second, noisier copy of the same text.
+        """
+        self.do_ocr = do_ocr
+
     def parse(self, file_path: Path | str, mime_type: str | None = None) -> ParsedDocument:
         from docling_core.types.doc import ContentLayer, PictureItem, TableItem
 
         path = Path(file_path)
         started = time.perf_counter()
-        document = _converter().convert(str(path)).document
+        document = _converter(self.do_ocr).convert(str(path)).document
 
         pages: dict[int, ParsedPage] = {
             number: ParsedPage(page_number=number, width=page.size.width, height=page.size.height)
@@ -180,7 +188,11 @@ class DoclingParser:
             file_type="pdf",
             total_pages=len(ordered),
             pages=ordered,
-            metadata={"source_path": str(path), "intelligence_engine": "docling"},
+            metadata={
+                "source_path": str(path),
+                "intelligence_engine": "docling",
+                "ocr": self.do_ocr,
+            },
             parser_name=self.parser_name,
             parsing_duration_ms=(time.perf_counter() - started) * 1000.0,
         )
