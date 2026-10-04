@@ -31,8 +31,8 @@ Measured, not estimated — these come from partial runs on 2026-08-18:
 | Groq | generation (fallback), LLM judge | **200,000 tokens / day**, 8,000 / minute | The binding constraint. |
 | Jina | embeddings | not a practical limit | One embed per question. |
 
-**Cost per question:** ~5.4k tokens for generation (a ~4k-token evidence block
-plus prompt and completion), plus ~7k more if the LLM judge runs.
+**Cost per question:** planned at ~5.4k tokens for generation (a ~4k-token evidence block
+plus prompt and completion; experiment-001 measured a mean of 2,466), plus ~7k more if the LLM judge runs.
 
 **Therefore:**
 

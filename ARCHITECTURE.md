@@ -142,7 +142,7 @@ Why these, briefly:
   can change without rebuilding retrieval, citations or evaluation.
 * **Neural sparse is the default channel because it measured best per second.**
   Dense-only was significantly the worst channel on both dev and held-out splits;
-  sparse tied the reranked paths on held-out quality at 0.26 s retrieval, and in a
+  sparse tied the reranked paths on held-out quality at 0.13 s retrieval (p50), and in a
   paired end-to-end run answered 76 of 82 answerable questions against dense's 55.
   The trade accepted: it has no fallback channel, so readiness requires OpenSearch
   and loaded sparse models in this mode.
